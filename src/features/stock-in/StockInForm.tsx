@@ -44,7 +44,7 @@ interface StockInFormProps {
   products: Product[];
   variants: ProductVariant[];
   currentUserName: string;
-  onSubmit: (values: StockInInput) => void;
+  onSubmit: (values: StockInInput) => void | Promise<void>;
 }
 
 function createEmptyRow(): StockInFormRow {
@@ -185,7 +185,7 @@ export function StockInForm({
       return;
     }
 
-    onSubmit({
+    void onSubmit({
       ...header,
       items: rows.map((row) => ({
         variantId: row.variantId,

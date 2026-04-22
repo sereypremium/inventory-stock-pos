@@ -20,12 +20,13 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AppLogo } from '../../components/app/AppLogo';
 import { useAuth } from '../../contexts/AuthContext';
-import { isSupabaseConfigured } from '../../lib/supabase';
+import { useInventory } from '../../contexts/InventoryContext';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { demoAccounts, login } = useAuth();
+  const { isDatabaseConnected, isSyncing } = useInventory();
   const [email, setEmail] = useState(demoAccounts[0]?.email ?? '');
   const [password, setPassword] = useState(demoAccounts[0]?.password ?? '');
   const [error, setError] = useState<string | null>(null);
@@ -97,7 +98,13 @@ export function LoginPage() {
                     sx={{ backgroundColor: 'rgba(255,255,255,0.16)', color: 'common.white' }}
                   />
                   <Chip
-                    label={isSupabaseConfigured ? 'Supabase ready' : 'Mock mode'}
+                    label={
+                      isDatabaseConnected
+                        ? 'Database connected'
+                        : isSyncing
+                          ? 'Connecting...'
+                          : 'Mock mode'
+                    }
                     size="small"
                     sx={{ backgroundColor: 'rgba(255,255,255,0.16)', color: 'common.white' }}
                   />

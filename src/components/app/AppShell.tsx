@@ -24,6 +24,7 @@ import { useState } from 'react';
 import { AppLogo } from './AppLogo';
 import { futureModules, navigationItems } from '../../config/navigation';
 import { useAuth } from '../../contexts/AuthContext';
+import { useInventory } from '../../contexts/InventoryContext';
 
 const drawerWidth = 272;
 
@@ -37,6 +38,7 @@ export function AppShell() {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('lg'));
   const { session, logout } = useAuth();
+  const { isDatabaseConnected, isSyncing } = useInventory();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const visibleNavigation = navigationItems.filter(
@@ -112,6 +114,18 @@ export function AppShell() {
                 color={session.role === 'admin' ? 'primary' : 'secondary'}
                 label={session.role === 'admin' ? 'Admin' : 'Cashier'}
                 size="small"
+              />
+              <Chip
+                color={isDatabaseConnected ? 'success' : isSyncing ? 'primary' : 'default'}
+                label={
+                  isDatabaseConnected
+                    ? 'Database connected'
+                    : isSyncing
+                      ? 'Connecting...'
+                      : 'Mock mode'
+                }
+                size="small"
+                variant={isDatabaseConnected ? 'filled' : 'outlined'}
               />
               <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                 <Avatar sx={{ bgcolor: 'primary.main', height: 34, width: 34 }}>

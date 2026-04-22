@@ -67,8 +67,10 @@ export function BrandsPage() {
   const activeBrands = brands.filter((brand) => brand.status === 'active').length;
   const coveredProducts = products.length;
 
-  const handleSave = (values: BrandInput) => {
-    const result = editingBrand ? updateBrand(editingBrand.id, values) : addBrand(values);
+  const handleSave = async (values: BrandInput) => {
+    const result = editingBrand
+      ? await updateBrand(editingBrand.id, values)
+      : await addBrand(values);
 
     setFeedback({
       severity: result.ok ? 'success' : 'error',
@@ -81,12 +83,12 @@ export function BrandsPage() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) {
       return;
     }
 
-    const result = deleteBrand(deleteTarget.id);
+    const result = await deleteBrand(deleteTarget.id);
     setFeedback({
       severity: result.ok ? 'success' : 'error',
       message: result.message,
@@ -243,7 +245,9 @@ export function BrandsPage() {
             : ''
         }
         onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
+        onConfirm={() => {
+          void handleDelete();
+        }}
         open={Boolean(deleteTarget)}
         title="Delete brand"
       />
@@ -260,7 +264,7 @@ function BrandDialog({
   open: boolean;
   initialValue: Brand | null;
   onClose: () => void;
-  onSubmit: (values: BrandInput) => void;
+  onSubmit: (values: BrandInput) => void | Promise<void>;
 }) {
   const [form, setForm] = useState<BrandInput>(defaultBrandForm);
 
@@ -288,7 +292,7 @@ function BrandDialog({
         component="form"
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit(form);
+          void onSubmit(form);
         }}
       >
         <DialogContent>

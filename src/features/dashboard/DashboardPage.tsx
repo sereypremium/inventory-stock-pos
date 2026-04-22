@@ -4,7 +4,6 @@ import { Link as RouterLink } from 'react-router-dom';
 import { PageHeader } from '../../components/common/PageHeader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useInventory } from '../../contexts/InventoryContext';
-import { isSupabaseConfigured } from '../../lib/supabase';
 import { DashboardKpiGrid } from './components/DashboardKpiGrid';
 import { InventoryHealthSection } from './components/InventoryHealthSection';
 import { OperationsSection } from './components/OperationsSection';
@@ -15,7 +14,7 @@ import { buildDashboardAnalytics } from './dashboardUtils';
 
 export function DashboardPage() {
   const { session, settings } = useAuth();
-  const { brands, products, variants, sales } = useInventory();
+  const { brands, products, variants, sales, isDatabaseConnected, isSyncing } = useInventory();
   const analytics = useMemo(
     () =>
       buildDashboardAnalytics({
@@ -57,10 +56,16 @@ export function DashboardPage() {
         title={`Welcome back, ${session?.name ?? 'team'}`}
       />
 
-      {!isSupabaseConfigured && (
+      {!isDatabaseConnected && !isSyncing && (
         <Alert severity="info">
-          Supabase keys are not configured yet, so the dashboard is running from local mock data
-          stored in browser storage.
+          The dashboard is currently running from local mock and browser-stored data. Supabase
+          becomes active automatically when the database connection is available.
+        </Alert>
+      )}
+
+      {isSyncing && (
+        <Alert severity="info">
+          Connecting to Supabase and syncing the latest products, variants, and sales.
         </Alert>
       )}
 

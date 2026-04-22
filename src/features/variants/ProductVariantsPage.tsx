@@ -102,10 +102,10 @@ export function ProductVariantsPage() {
     0,
   );
 
-  const handleSave = (values: ProductVariantInput) => {
+  const handleSave = async (values: ProductVariantInput) => {
     const result = editingVariant
-      ? updateVariant(editingVariant.id, values)
-      : addVariant(values);
+      ? await updateVariant(editingVariant.id, values)
+      : await addVariant(values);
 
     setFeedback({
       severity: result.ok ? 'success' : 'error',
@@ -118,12 +118,12 @@ export function ProductVariantsPage() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) {
       return;
     }
 
-    const result = deleteVariant(deleteTarget.id);
+    const result = await deleteVariant(deleteTarget.id);
     setFeedback({
       severity: result.ok ? 'success' : 'error',
       message: result.message,
@@ -314,7 +314,9 @@ export function ProductVariantsPage() {
             : ''
         }
         onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
+        onConfirm={() => {
+          void handleDelete();
+        }}
         open={Boolean(deleteTarget)}
         title="Delete variant"
       />
@@ -332,7 +334,7 @@ function VariantDialog({
   open: boolean;
   initialValue: ProductVariant | null;
   onClose: () => void;
-  onSubmit: (values: ProductVariantInput) => void;
+  onSubmit: (values: ProductVariantInput) => void | Promise<void>;
   products: Array<{ id: string; name: string }>;
 }) {
   const [form, setForm] = useState<ProductVariantInput>(defaultVariantForm);
@@ -370,7 +372,7 @@ function VariantDialog({
         component="form"
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit(form);
+          void onSubmit(form);
         }}
       >
         <DialogContent>

@@ -67,10 +67,10 @@ export function CategoriesPage() {
   const activeCategories = categories.filter((category) => category.status === 'active').length;
   const mappedProducts = products.length;
 
-  const handleSave = (values: CategoryInput) => {
+  const handleSave = async (values: CategoryInput) => {
     const result = editingCategory
-      ? updateCategory(editingCategory.id, values)
-      : addCategory(values);
+      ? await updateCategory(editingCategory.id, values)
+      : await addCategory(values);
 
     setFeedback({
       severity: result.ok ? 'success' : 'error',
@@ -83,12 +83,12 @@ export function CategoriesPage() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) {
       return;
     }
 
-    const result = deleteCategory(deleteTarget.id);
+    const result = await deleteCategory(deleteTarget.id);
     setFeedback({
       severity: result.ok ? 'success' : 'error',
       message: result.message,
@@ -251,7 +251,9 @@ export function CategoriesPage() {
             : ''
         }
         onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
+        onConfirm={() => {
+          void handleDelete();
+        }}
         open={Boolean(deleteTarget)}
         title="Delete category"
       />
@@ -268,7 +270,7 @@ function CategoryDialog({
   open: boolean;
   initialValue: Category | null;
   onClose: () => void;
-  onSubmit: (values: CategoryInput) => void;
+  onSubmit: (values: CategoryInput) => void | Promise<void>;
 }) {
   const [form, setForm] = useState<CategoryInput>(defaultCategoryForm);
 
@@ -296,7 +298,7 @@ function CategoryDialog({
         component="form"
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit(form);
+          void onSubmit(form);
         }}
       >
         <DialogContent>

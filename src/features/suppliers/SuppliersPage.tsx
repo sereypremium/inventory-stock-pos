@@ -78,10 +78,10 @@ export function SuppliersPage() {
     stockIns.some((record) => record.supplierId === supplier.id),
   ).length;
 
-  const handleSave = (values: SupplierInput) => {
+  const handleSave = async (values: SupplierInput) => {
     const result = editingSupplier
-      ? updateSupplier(editingSupplier.id, values)
-      : addSupplier(values);
+      ? await updateSupplier(editingSupplier.id, values)
+      : await addSupplier(values);
 
     setFeedback({
       severity: result.ok ? 'success' : 'error',
@@ -94,12 +94,12 @@ export function SuppliersPage() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) {
       return;
     }
 
-    const result = deleteSupplier(deleteTarget.id);
+    const result = await deleteSupplier(deleteTarget.id);
     setFeedback({
       severity: result.ok ? 'success' : 'error',
       message: result.message,
@@ -272,7 +272,9 @@ export function SuppliersPage() {
             : ''
         }
         onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
+        onConfirm={() => {
+          void handleDelete();
+        }}
         open={Boolean(deleteTarget)}
         title="Delete supplier"
       />
@@ -289,7 +291,7 @@ function SupplierDialog({
   open: boolean;
   initialValue: Supplier | null;
   onClose: () => void;
-  onSubmit: (values: SupplierInput) => void;
+  onSubmit: (values: SupplierInput) => void | Promise<void>;
 }) {
   const [form, setForm] = useState<SupplierInput>(defaultSupplierForm);
 
@@ -320,7 +322,7 @@ function SupplierDialog({
         component="form"
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit(form);
+          void onSubmit(form);
         }}
       >
         <DialogContent>

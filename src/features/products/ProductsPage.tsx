@@ -102,10 +102,10 @@ export function ProductsPage() {
     variants.some((variant) => variant.productId === product.id && variant.stockQty <= variant.minStock),
   ).length;
 
-  const handleSave = (values: ProductInput) => {
+  const handleSave = async (values: ProductInput) => {
     const result = editingProduct
-      ? updateProduct(editingProduct.id, values)
-      : addProduct(values);
+      ? await updateProduct(editingProduct.id, values)
+      : await addProduct(values);
 
     setFeedback({
       severity: result.ok ? 'success' : 'error',
@@ -118,12 +118,12 @@ export function ProductsPage() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) {
       return;
     }
 
-    const result = deleteProduct(deleteTarget.id);
+    const result = await deleteProduct(deleteTarget.id);
     setFeedback({
       severity: result.ok ? 'success' : 'error',
       message: result.message,
@@ -300,7 +300,9 @@ export function ProductsPage() {
             : ''
         }
         onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
+        onConfirm={() => {
+          void handleDelete();
+        }}
         open={Boolean(deleteTarget)}
         title="Delete product"
       />
@@ -319,7 +321,7 @@ function ProductDialog({
   open: boolean;
   initialValue: Product | null;
   onClose: () => void;
-  onSubmit: (values: ProductInput) => void;
+  onSubmit: (values: ProductInput) => void | Promise<void>;
   brands: Array<{ id: string; name: string }>;
   categories: Array<{ id: string; name: string }>;
 }) {
@@ -364,7 +366,7 @@ function ProductDialog({
         component="form"
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit(form);
+          void onSubmit(form);
         }}
       >
         <DialogContent>

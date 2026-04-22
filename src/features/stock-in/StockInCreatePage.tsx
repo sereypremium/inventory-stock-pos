@@ -22,8 +22,8 @@ export function StockInCreatePage() {
 
   const canCreate = suppliers.length > 0 && variants.length > 0;
 
-  const handleSubmit = (values: StockInInput) => {
-    const result = createStockIn(values);
+  const handleSubmit = async (values: StockInInput) => {
+    const result = await createStockIn(values);
 
     setFeedback({
       severity: result.ok ? 'success' : 'error',

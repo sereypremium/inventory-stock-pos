@@ -377,7 +377,7 @@ export function PosPage() {
     pushFeedback('info', 'Cart cleared.');
   };
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (!session) {
       pushFeedback('error', 'Sign in again before processing a sale.');
       return;
@@ -403,7 +403,7 @@ export function PosPage() {
       return;
     }
 
-    const result = createSale({
+    const result = await createSale({
       cashierId: session.id,
       cashierName: session.name,
       customerName,
