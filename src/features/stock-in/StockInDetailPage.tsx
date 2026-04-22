@@ -31,7 +31,7 @@ export function StockInDetailPage() {
               Back to Stock In
             </Button>
           }
-          description="The requested stock in record could not be found in the current local store."
+          description="The requested stock in record could not be found in the active workspace data."
           title="Stock In Detail"
         />
         <Alert severity="warning">This stock in record is not available.</Alert>

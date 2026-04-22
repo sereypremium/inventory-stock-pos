@@ -32,8 +32,8 @@ export function SettingsPage() {
     setForm(settings);
   }, [settings]);
 
-  const handleSave = () => {
-    const result = saveSettings(form);
+  const handleSave = async () => {
+    const result = await saveSettings(form);
 
     setFeedback({
       severity: result.ok ? 'success' : 'error',
@@ -46,7 +46,9 @@ export function SettingsPage() {
       <PageHeader
         action={
           <Button
-            onClick={handleSave}
+            onClick={() => {
+              void handleSave();
+            }}
             startIcon={<SaveOutlinedIcon />}
             variant="contained"
           >
@@ -93,14 +95,14 @@ export function SettingsPage() {
       </Box>
 
       <DataCard
-        description="Keep the setup practical. These values are saved locally now and can later be connected to Supabase-backed settings."
+        description="Keep the setup practical. These values are stored in the active workspace data source and drive receipts, reports, and the dashboard identity."
         title="Store Profile"
       >
         <Box
           component="form"
           onSubmit={(event) => {
             event.preventDefault();
-            handleSave();
+            void handleSave();
           }}
           sx={{
             display: 'grid',

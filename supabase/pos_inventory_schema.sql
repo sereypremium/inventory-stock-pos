@@ -1,3 +1,23 @@
+create table if not exists public.brands (
+  id text primary key,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  name text not null,
+  code text not null,
+  origin_country text not null default '',
+  status text not null default 'active' check (status in ('active', 'inactive'))
+);
+
+create table if not exists public.categories (
+  id text primary key,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  name text not null,
+  code text not null,
+  description text not null default '',
+  status text not null default 'active' check (status in ('active', 'inactive'))
+);
+
 create table if not exists public.products (
   id text primary key,
   created_at timestamptz not null default timezone('utc', now()),
@@ -113,6 +133,43 @@ create table if not exists public.sale_items (
   line_profit numeric(12, 2) not null default 0
 );
 
+create table if not exists public.app_users (
+  id text primary key,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  name text not null,
+  email text not null,
+  password text not null,
+  role text not null check (role in ('admin', 'cashier')),
+  status text not null default 'active' check (status in ('active', 'inactive'))
+);
+
+create table if not exists public.system_settings (
+  id text primary key,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  store_name text not null,
+  branch_name text not null,
+  address text not null default '',
+  phone text not null default '',
+  receipt_footer text not null default '',
+  report_footer text not null default ''
+);
+
+alter table if exists public.brands add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table if exists public.brands add column if not exists updated_at timestamptz not null default timezone('utc', now());
+alter table if exists public.brands add column if not exists name text not null default '';
+alter table if exists public.brands add column if not exists code text not null default '';
+alter table if exists public.brands add column if not exists origin_country text not null default '';
+alter table if exists public.brands add column if not exists status text not null default 'active';
+
+alter table if exists public.categories add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table if exists public.categories add column if not exists updated_at timestamptz not null default timezone('utc', now());
+alter table if exists public.categories add column if not exists name text not null default '';
+alter table if exists public.categories add column if not exists code text not null default '';
+alter table if exists public.categories add column if not exists description text not null default '';
+alter table if exists public.categories add column if not exists status text not null default 'active';
+
 alter table if exists public.products add column if not exists created_at timestamptz not null default timezone('utc', now());
 alter table if exists public.products add column if not exists updated_at timestamptz not null default timezone('utc', now());
 alter table if exists public.products add column if not exists name text not null default '';
@@ -203,6 +260,23 @@ alter table if exists public.sale_items add column if not exists unit_cost numer
 alter table if exists public.sale_items add column if not exists line_cost numeric(12, 2) not null default 0;
 alter table if exists public.sale_items add column if not exists line_total numeric(12, 2) not null default 0;
 alter table if exists public.sale_items add column if not exists line_profit numeric(12, 2) not null default 0;
+
+alter table if exists public.app_users add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table if exists public.app_users add column if not exists updated_at timestamptz not null default timezone('utc', now());
+alter table if exists public.app_users add column if not exists name text not null default '';
+alter table if exists public.app_users add column if not exists email text not null default '';
+alter table if exists public.app_users add column if not exists password text not null default '';
+alter table if exists public.app_users add column if not exists role text not null default 'cashier';
+alter table if exists public.app_users add column if not exists status text not null default 'active';
+
+alter table if exists public.system_settings add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table if exists public.system_settings add column if not exists updated_at timestamptz not null default timezone('utc', now());
+alter table if exists public.system_settings add column if not exists store_name text not null default '';
+alter table if exists public.system_settings add column if not exists branch_name text not null default '';
+alter table if exists public.system_settings add column if not exists address text not null default '';
+alter table if exists public.system_settings add column if not exists phone text not null default '';
+alter table if exists public.system_settings add column if not exists receipt_footer text not null default '';
+alter table if exists public.system_settings add column if not exists report_footer text not null default '';
 
 do $$
 begin
@@ -688,9 +762,86 @@ begin
   where sh.id::text = item_totals.sale_id;
 end $$;
 
+insert into public.system_settings (
+  id,
+  created_at,
+  updated_at,
+  store_name,
+  branch_name,
+  address,
+  phone,
+  receipt_footer,
+  report_footer
+)
+select
+  'store-profile',
+  timezone('utc', now()),
+  timezone('utc', now()),
+  'BootRoom Soccer Shop',
+  'Main Counter',
+  '214 Matchday Avenue, San Diego, CA',
+  '+1 415 555 0101',
+  'Thank you for shopping with BootRoom.',
+  'Internal report generated from the local demo workspace.'
+where not exists (
+  select 1
+  from public.system_settings
+  where id = 'store-profile'
+);
+
+insert into public.app_users (
+  id,
+  created_at,
+  updated_at,
+  name,
+  email,
+  password,
+  role,
+  status
+)
+select *
+from (
+  values
+    (
+      'user-admin',
+      '2026-04-18T09:00:00.000Z'::timestamptz,
+      '2026-04-18T09:00:00.000Z'::timestamptz,
+      'Store Admin',
+      'admin@bootroompos.dev',
+      'Admin123!',
+      'admin',
+      'active'
+    ),
+    (
+      'user-cashier',
+      '2026-04-18T09:00:00.000Z'::timestamptz,
+      '2026-04-18T09:00:00.000Z'::timestamptz,
+      'Front Counter',
+      'cashier@bootroompos.dev',
+      'Cashier123!',
+      'cashier',
+      'active'
+    )
+) as seed (
+  id,
+  created_at,
+  updated_at,
+  name,
+  email,
+  password,
+  role,
+  status
+)
+where not exists (
+  select 1
+  from public.app_users
+);
+
 create index if not exists products_style_code_idx on public.products(style_code);
 create index if not exists products_brand_id_idx on public.products(brand_id);
 create index if not exists products_category_id_idx on public.products(category_id);
+create unique index if not exists brands_code_idx on public.brands(code);
+create unique index if not exists categories_code_idx on public.categories(code);
 create index if not exists product_variants_product_id_idx on public.product_variants(product_id);
 create index if not exists product_variants_barcode_idx on public.product_variants(barcode);
 create unique index if not exists suppliers_code_idx on public.suppliers(code);
@@ -703,7 +854,10 @@ create index if not exists sale_headers_receipt_no_idx on public.sale_headers(re
 create index if not exists sale_headers_sold_at_idx on public.sale_headers(sold_at desc);
 create index if not exists sale_items_sale_id_idx on public.sale_items(sale_id);
 create index if not exists sale_items_variant_id_idx on public.sale_items(variant_id);
+create unique index if not exists app_users_email_idx on public.app_users(email);
 
+alter table public.brands enable row level security;
+alter table public.categories enable row level security;
 alter table public.products enable row level security;
 alter table public.product_variants enable row level security;
 alter table public.suppliers enable row level security;
@@ -711,7 +865,11 @@ alter table public.purchase_headers enable row level security;
 alter table public.purchase_items enable row level security;
 alter table public.sale_headers enable row level security;
 alter table public.sale_items enable row level security;
+alter table public.app_users enable row level security;
+alter table public.system_settings enable row level security;
 
+drop policy if exists "brands_dev_all" on public.brands;
+drop policy if exists "categories_dev_all" on public.categories;
 drop policy if exists "products_dev_all" on public.products;
 drop policy if exists "product_variants_dev_all" on public.product_variants;
 drop policy if exists "suppliers_dev_all" on public.suppliers;
@@ -719,6 +877,22 @@ drop policy if exists "purchase_headers_dev_all" on public.purchase_headers;
 drop policy if exists "purchase_items_dev_all" on public.purchase_items;
 drop policy if exists "sale_headers_dev_all" on public.sale_headers;
 drop policy if exists "sale_items_dev_all" on public.sale_items;
+drop policy if exists "app_users_dev_all" on public.app_users;
+drop policy if exists "system_settings_dev_all" on public.system_settings;
+
+create policy "brands_dev_all"
+on public.brands
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "categories_dev_all"
+on public.categories
+for all
+to anon, authenticated
+using (true)
+with check (true);
 
 create policy "products_dev_all"
 on public.products
@@ -764,6 +938,20 @@ with check (true);
 
 create policy "sale_items_dev_all"
 on public.sale_items
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "app_users_dev_all"
+on public.app_users
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "system_settings_dev_all"
+on public.system_settings
 for all
 to anon, authenticated
 using (true)

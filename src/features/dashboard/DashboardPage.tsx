@@ -4,6 +4,7 @@ import { Link as RouterLink } from 'react-router-dom';
 import { PageHeader } from '../../components/common/PageHeader';
 import { useAuth } from '../../contexts/AuthContext';
 import { useInventory } from '../../contexts/InventoryContext';
+import { isSupabaseConfigured } from '../../lib/supabase';
 import { DashboardKpiGrid } from './components/DashboardKpiGrid';
 import { InventoryHealthSection } from './components/InventoryHealthSection';
 import { OperationsSection } from './components/OperationsSection';
@@ -58,14 +59,15 @@ export function DashboardPage() {
 
       {!isDatabaseConnected && !isSyncing && (
         <Alert severity="info">
-          The dashboard is currently running from local mock and browser-stored data. Supabase
-          becomes active automatically when the database connection is available.
+          {isSupabaseConfigured
+            ? 'The dashboard could not sync live data from Supabase, so live metrics are currently unavailable.'
+            : 'The dashboard is currently running from local mock and browser-stored data because Supabase env vars are not configured.'}
         </Alert>
       )}
 
       {isSyncing && (
         <Alert severity="info">
-          Connecting to Supabase and syncing the latest products, variants, and sales.
+          Connecting to Supabase and syncing the latest brands, categories, products, variants, stock flow, and sales.
         </Alert>
       )}
 

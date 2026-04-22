@@ -50,7 +50,7 @@ export function SaleDetailPage() {
               Back to Sales
             </Button>
           }
-          description="The requested sale could not be found in the current local store."
+          description="The requested sale could not be found in the active workspace data."
           title="Sale Detail"
         />
         <Alert severity="warning">This sale record is not available.</Alert>

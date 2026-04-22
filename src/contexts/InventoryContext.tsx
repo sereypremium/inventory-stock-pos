@@ -8,10 +8,14 @@ import { createStockInTransaction } from '../services/stockInService';
 import {
   createSupabasePurchaseTransaction,
   createSupabaseSaleTransaction,
+  deleteSupabaseBrand,
+  deleteSupabaseCategory,
   deleteSupabaseSupplier,
   deleteSupabaseProduct,
   deleteSupabaseVariant,
   fetchSupabaseInventorySlices,
+  saveSupabaseBrand,
+  saveSupabaseCategory,
   saveSupabaseProduct,
   saveSupabaseSupplier,
   saveSupabaseVariant,
@@ -121,6 +125,8 @@ function normalizeInventoryState(value?: Partial<InventoryState> | null): Invent
 function createSupabaseBootState(baseState: InventoryState): InventoryState {
   return {
     ...baseState,
+    brands: [],
+    categories: [],
     products: [],
     variants: [],
     suppliers: [],
@@ -180,7 +186,10 @@ function buildFailure(message: string): OperationResult {
 
 export function InventoryProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<InventoryState>(() => getInitialState());
-  const [dataSource, setDataSource] = useState<'mock' | 'supabase'>('mock');
+  const [dataSource, setDataSource] = useState<'mock' | 'supabase'>(
+    isSupabaseConfigured ? 'supabase' : 'mock',
+  );
+  const [isDatabaseConnected, setIsDatabaseConnected] = useState(false);
   const [isSyncing, setIsSyncing] = useState(isSupabaseConfigured);
 
   const commitState = (updater: (current: InventoryState) => InventoryState) => {
@@ -194,12 +203,14 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isSupabaseConfigured) {
       setDataSource('mock');
+      setIsDatabaseConnected(false);
       setIsSyncing(false);
       return;
     }
 
     let active = true;
 
+    setDataSource('supabase');
     setIsSyncing(true);
 
     void fetchSupabaseInventorySlices()
@@ -211,6 +222,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         commitState((current) =>
           normalizeInventoryState({
             ...current,
+            brands: remoteSlices.brands,
+            categories: remoteSlices.categories,
             products: remoteSlices.products,
             variants: remoteSlices.variants,
             suppliers: remoteSlices.suppliers,
@@ -218,14 +231,15 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
             sales: remoteSlices.sales,
           }),
         );
-        setDataSource('supabase');
+        setIsDatabaseConnected(true);
       })
       .catch(() => {
         if (!active) {
           return;
         }
 
-        setDataSource('mock');
+        commitState((current) => createSupabaseBootState(current));
+        setIsDatabaseConnected(false);
       })
       .finally(() => {
         if (!active) {
@@ -243,7 +257,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   const value: InventoryContextValue = {
     ...state,
     dataSource,
-    isDatabaseConnected: dataSource === 'supabase',
+    isDatabaseConnected,
     isSyncing,
     addBrand: async (input) => {
       const exists = state.brands.some(
@@ -254,7 +268,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return buildFailure('Brand code already exists.');
       }
 
-      const nextBrand: Brand = {
+      let nextBrand: Brand = {
         id: crypto.randomUUID(),
         ...createTimestamps(),
         name: input.name.trim(),
@@ -262,6 +276,16 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         originCountry: input.originCountry.trim(),
         status: input.status,
       };
+
+      if (dataSource === 'supabase') {
+        const remoteResult = await saveSupabaseBrand(nextBrand);
+
+        if (!remoteResult.ok || !remoteResult.record) {
+          return buildFailure(remoteResult.message);
+        }
+
+        nextBrand = remoteResult.record;
+      }
 
       commitState((current) => ({
         ...current,
@@ -281,19 +305,35 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return buildFailure('Brand code already exists.');
       }
 
+      const existingBrand = state.brands.find((brand) => brand.id === brandId);
+
+      if (!existingBrand) {
+        return buildFailure('Brand not found.');
+      }
+
+      let nextBrand: Brand = {
+        ...existingBrand,
+        name: input.name.trim(),
+        code: input.code.trim().toUpperCase(),
+        originCountry: input.originCountry.trim(),
+        status: input.status,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (dataSource === 'supabase') {
+        const remoteResult = await saveSupabaseBrand(nextBrand);
+
+        if (!remoteResult.ok || !remoteResult.record) {
+          return buildFailure(remoteResult.message);
+        }
+
+        nextBrand = remoteResult.record;
+      }
+
       commitState((current) => ({
         ...current,
         brands: current.brands.map((brand) =>
-          brand.id === brandId
-            ? {
-                ...brand,
-                name: input.name.trim(),
-                code: input.code.trim().toUpperCase(),
-                originCountry: input.originCountry.trim(),
-                status: input.status,
-                updatedAt: new Date().toISOString(),
-              }
-            : brand,
+          brand.id === brandId ? nextBrand : brand,
         ),
       }));
 
@@ -306,6 +346,14 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return buildFailure(
           'This brand is already used by products. Remove or reassign those products first.',
         );
+      }
+
+      if (dataSource === 'supabase') {
+        const remoteResult = await deleteSupabaseBrand(brandId);
+
+        if (!remoteResult.ok) {
+          return buildFailure(remoteResult.message);
+        }
       }
 
       commitState((current) => ({
@@ -324,7 +372,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return buildFailure('Category code already exists.');
       }
 
-      const nextCategory: Category = {
+      let nextCategory: Category = {
         id: crypto.randomUUID(),
         ...createTimestamps(),
         name: input.name.trim(),
@@ -332,6 +380,16 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         description: input.description.trim(),
         status: input.status,
       };
+
+      if (dataSource === 'supabase') {
+        const remoteResult = await saveSupabaseCategory(nextCategory);
+
+        if (!remoteResult.ok || !remoteResult.record) {
+          return buildFailure(remoteResult.message);
+        }
+
+        nextCategory = remoteResult.record;
+      }
 
       commitState((current) => ({
         ...current,
@@ -351,19 +409,35 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return buildFailure('Category code already exists.');
       }
 
+      const existingCategory = state.categories.find((category) => category.id === categoryId);
+
+      if (!existingCategory) {
+        return buildFailure('Category not found.');
+      }
+
+      let nextCategory: Category = {
+        ...existingCategory,
+        name: input.name.trim(),
+        code: input.code.trim().toUpperCase(),
+        description: input.description.trim(),
+        status: input.status,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (dataSource === 'supabase') {
+        const remoteResult = await saveSupabaseCategory(nextCategory);
+
+        if (!remoteResult.ok || !remoteResult.record) {
+          return buildFailure(remoteResult.message);
+        }
+
+        nextCategory = remoteResult.record;
+      }
+
       commitState((current) => ({
         ...current,
         categories: current.categories.map((category) =>
-          category.id === categoryId
-            ? {
-                ...category,
-                name: input.name.trim(),
-                code: input.code.trim().toUpperCase(),
-                description: input.description.trim(),
-                status: input.status,
-                updatedAt: new Date().toISOString(),
-              }
-            : category,
+          category.id === categoryId ? nextCategory : category,
         ),
       }));
 
@@ -378,6 +452,14 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return buildFailure(
           'This category is already assigned to products. Remove or reassign those products first.',
         );
+      }
+
+      if (dataSource === 'supabase') {
+        const remoteResult = await deleteSupabaseCategory(categoryId);
+
+        if (!remoteResult.ok) {
+          return buildFailure(remoteResult.message);
+        }
       }
 
       commitState((current) => ({

@@ -1,6 +1,13 @@
 import type { ReactNode } from 'react';
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import { mockSystemSettings, mockUsers } from '../data/mockData';
+import { isSupabaseConfigured } from '../lib/supabase';
+import {
+  deleteSupabaseUser,
+  fetchSupabaseAuthStore,
+  saveSupabaseSettings,
+  saveSupabaseUser,
+} from '../services/supabaseAuthStore';
 import type {
   AppUser,
   MockAccount,
@@ -15,18 +22,27 @@ interface AuthContextValue {
   session: UserSession | null;
   users: AppUser[];
   settings: SystemSettings;
-  login: (email: string, password: string) => OperationResult;
+  login: (email: string, password: string) => Promise<OperationResult>;
   logout: () => void;
-  addUser: (input: UserInput) => OperationResult;
-  updateUser: (userId: string, input: UserInput) => OperationResult;
-  deleteUser: (userId: string) => OperationResult;
-  saveSettings: (input: SystemSettingsInput) => OperationResult;
+  addUser: (input: UserInput) => Promise<OperationResult>;
+  updateUser: (userId: string, input: UserInput) => Promise<OperationResult>;
+  deleteUser: (userId: string) => Promise<OperationResult>;
+  saveSettings: (input: SystemSettingsInput) => Promise<OperationResult>;
   demoAccounts: MockAccount[];
 }
 
 const AUTH_STORAGE_KEY = 'bootroom-pos.auth-session';
 const USERS_STORAGE_KEY = 'bootroom-pos.auth-users';
 const SETTINGS_STORAGE_KEY = 'bootroom-pos.system-settings';
+
+const emptySystemSettings: SystemSettings = {
+  storeName: '',
+  branchName: '',
+  address: '',
+  phone: '',
+  receiptFooter: '',
+  reportFooter: '',
+};
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
@@ -71,6 +87,10 @@ function normalizeUsers(value: unknown) {
 }
 
 function getInitialUsers() {
+  if (isSupabaseConfigured) {
+    return [];
+  }
+
   if (typeof window === 'undefined') {
     return mockUsers;
   }
@@ -90,6 +110,10 @@ function getInitialUsers() {
 }
 
 function getInitialSettings() {
+  if (isSupabaseConfigured) {
+    return emptySystemSettings;
+  }
+
   if (typeof window === 'undefined') {
     return mockSystemSettings;
   }
@@ -130,6 +154,11 @@ function getInitialSession(users: AppUser[]) {
 
   try {
     const parsed = JSON.parse(storedSession) as UserSession;
+
+    if (isSupabaseConfigured) {
+      return parsed;
+    }
+
     const matchedUser = users.find(
       (user) => user.id === parsed.id && user.status === 'active',
     );
@@ -186,6 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [users, setUsers] = useState<AppUser[]>(() => getInitialUsers());
   const [settings, setSettings] = useState<SystemSettings>(() => getInitialSettings());
   const [session, setSession] = useState<UserSession | null>(() => getInitialSession(users));
+  const [isSyncing, setIsSyncing] = useState(isSupabaseConfigured);
 
   const syncSessionWithUser = (user: AppUser | null) => {
     if (!user) {
@@ -207,12 +237,86 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   };
 
+  const applySettings = (nextSettings: SystemSettings) => {
+    setSettings(nextSettings);
+    persistSettings(nextSettings);
+  };
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setIsSyncing(false);
+      return;
+    }
+
+    let active = true;
+
+    setIsSyncing(true);
+
+    void fetchSupabaseAuthStore()
+      .then((remoteStore) => {
+        if (!active) {
+          return;
+        }
+
+        setUsers(remoteStore.users);
+        persistUsers(remoteStore.users);
+        applySettings(remoteStore.settings);
+
+        setSession((currentSession) => {
+          const storedSession = currentSession ?? getInitialSession(remoteStore.users);
+
+          if (!storedSession) {
+            persistSession(null);
+            return null;
+          }
+
+          const matchedUser = remoteStore.users.find(
+            (user) => user.id === storedSession.id && user.status === 'active',
+          );
+
+          if (!matchedUser) {
+            persistSession(null);
+            return null;
+          }
+
+          const nextSession = buildSession(matchedUser);
+          persistSession(nextSession);
+          return nextSession;
+        });
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+
+        setUsers([]);
+      })
+      .finally(() => {
+        if (!active) {
+          return;
+        }
+
+        setIsSyncing(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const value: AuthContextValue = {
     session,
     users,
     settings,
     demoAccounts: users.filter((user) => user.status === 'active') as MockAccount[],
-    login: (email, password) => {
+    login: async (email, password) => {
+      if (isSupabaseConfigured && isSyncing) {
+        return {
+          ok: false,
+          message: 'Accounts are still syncing from Supabase. Please wait a moment and try again.',
+        };
+      }
+
       const match = users.find(
         (user) =>
           user.status === 'active' &&
@@ -223,7 +327,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!match) {
         return {
           ok: false,
-          message: 'Invalid credentials. Use one of the active accounts shown on the page.',
+          message:
+            users.length === 0
+              ? 'No active accounts are available in the current workspace data source.'
+              : 'Invalid credentials. Use one of the active accounts shown on the page.',
         };
       }
 
@@ -237,7 +344,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logout: () => {
       syncSessionWithUser(null);
     },
-    addUser: (input) => {
+    addUser: async (input) => {
       const validationMessage = validateUserInput(input);
 
       if (validationMessage) {
@@ -252,7 +359,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { ok: false, message: 'User email already exists.' };
       }
 
-      const nextUser: AppUser = {
+      let nextUser: AppUser = {
         id: crypto.randomUUID(),
         name: input.name.trim(),
         email: input.email.trim().toLowerCase(),
@@ -263,11 +370,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         updatedAt: new Date().toISOString(),
       };
 
+      if (isSupabaseConfigured) {
+        const remoteResult = await saveSupabaseUser(nextUser);
+
+        if (!remoteResult.ok || !remoteResult.record) {
+          return { ok: false, message: remoteResult.message };
+        }
+
+        nextUser = remoteResult.record;
+      }
+
       updateUsers((current) => [nextUser, ...current]);
 
       return { ok: true, message: 'User saved successfully.' };
     },
-    updateUser: (userId, input) => {
+    updateUser: async (userId, input) => {
       const validationMessage = validateUserInput(input);
 
       if (validationMessage) {
@@ -312,7 +429,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
 
-      const nextUser: AppUser = {
+      let nextUser: AppUser = {
         ...existingUser,
         name: input.name.trim(),
         email: input.email.trim().toLowerCase(),
@@ -321,6 +438,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         status: input.status,
         updatedAt: new Date().toISOString(),
       };
+
+      if (isSupabaseConfigured) {
+        const remoteResult = await saveSupabaseUser(nextUser);
+
+        if (!remoteResult.ok || !remoteResult.record) {
+          return { ok: false, message: remoteResult.message };
+        }
+
+        nextUser = remoteResult.record;
+      }
 
       updateUsers((current) =>
         current.map((user) => (user.id === userId ? nextUser : user)),
@@ -332,7 +459,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       return { ok: true, message: 'User updated successfully.' };
     },
-    deleteUser: (userId) => {
+    deleteUser: async (userId) => {
       const existingUser = users.find((user) => user.id === userId);
 
       if (!existingUser) {
@@ -358,18 +485,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         };
       }
 
+      if (isSupabaseConfigured) {
+        const remoteResult = await deleteSupabaseUser(userId);
+
+        if (!remoteResult.ok) {
+          return { ok: false, message: remoteResult.message };
+        }
+      }
+
       updateUsers((current) => current.filter((user) => user.id !== userId));
 
       return { ok: true, message: 'User deleted successfully.' };
     },
-    saveSettings: (input) => {
+    saveSettings: async (input) => {
       const validationMessage = validateSettingsInput(input);
 
       if (validationMessage) {
         return { ok: false, message: validationMessage };
       }
 
-      const nextSettings: SystemSettings = {
+      let nextSettings: SystemSettings = {
         storeName: input.storeName.trim(),
         branchName: input.branchName.trim(),
         address: input.address.trim(),
@@ -378,8 +513,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         reportFooter: input.reportFooter.trim(),
       };
 
-      setSettings(nextSettings);
-      persistSettings(nextSettings);
+      if (isSupabaseConfigured) {
+        const remoteResult = await saveSupabaseSettings(nextSettings);
+
+        if (!remoteResult.ok || !remoteResult.record) {
+          return { ok: false, message: remoteResult.message };
+        }
+
+        nextSettings = remoteResult.record;
+      }
+
+      applySettings(nextSettings);
 
       return { ok: true, message: 'Settings saved successfully.' };
     },

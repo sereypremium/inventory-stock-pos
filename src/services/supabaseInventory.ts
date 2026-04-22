@@ -1,5 +1,7 @@
 import { supabase } from '../lib/supabase';
 import type {
+  Brand,
+  Category,
   InventoryState,
   OperationResult,
   Product,
@@ -10,6 +12,26 @@ import type {
   StockInRecord,
   Supplier,
 } from '../types/models';
+
+interface BrandRow {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  code: string;
+  origin_country: string;
+  status: Brand['status'];
+}
+
+interface CategoryRow {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  code: string;
+  description: string;
+  status: Category['status'];
+}
 
 interface ProductRow {
   id: string;
@@ -155,6 +177,54 @@ function buildRemoteSuccess(message: string, recordId?: string): OperationResult
     ok: true,
     message,
     recordId,
+  };
+}
+
+function mapBrandRowToModel(row: BrandRow): Brand {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    name: row.name,
+    code: row.code,
+    originCountry: row.origin_country ?? '',
+    status: row.status,
+  };
+}
+
+function mapBrandToRow(brand: Brand): BrandRow {
+  return {
+    id: brand.id,
+    created_at: brand.createdAt,
+    updated_at: brand.updatedAt,
+    name: brand.name,
+    code: brand.code,
+    origin_country: brand.originCountry,
+    status: brand.status,
+  };
+}
+
+function mapCategoryRowToModel(row: CategoryRow): Category {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    name: row.name,
+    code: row.code,
+    description: row.description ?? '',
+    status: row.status,
+  };
+}
+
+function mapCategoryToRow(category: Category): CategoryRow {
+  return {
+    id: category.id,
+    created_at: category.createdAt,
+    updated_at: category.updatedAt,
+    name: category.name,
+    code: category.code,
+    description: category.description ?? '',
+    status: category.status,
   };
 }
 
@@ -434,10 +504,15 @@ async function rollbackInsertedPurchase(purchaseId: string) {
 }
 
 export async function fetchSupabaseInventorySlices(): Promise<
-  Pick<InventoryState, 'products' | 'variants' | 'suppliers' | 'stockIns' | 'sales'>
+  Pick<
+    InventoryState,
+    'brands' | 'categories' | 'products' | 'variants' | 'suppliers' | 'stockIns' | 'sales'
+  >
 > {
   const client = getClient();
   const [
+    brandsResult,
+    categoriesResult,
     productsResult,
     variantsResult,
     suppliersResult,
@@ -446,6 +521,8 @@ export async function fetchSupabaseInventorySlices(): Promise<
     saleHeadersResult,
     saleItemsResult,
   ] = await Promise.all([
+    client.from('brands').select('*').order('created_at', { ascending: false }),
+    client.from('categories').select('*').order('created_at', { ascending: false }),
     client.from('products').select('*').order('created_at', { ascending: false }),
     client.from('product_variants').select('*').order('created_at', { ascending: false }),
     client.from('suppliers').select('*').order('created_at', { ascending: false }),
@@ -454,6 +531,14 @@ export async function fetchSupabaseInventorySlices(): Promise<
     client.from('sale_headers').select('*').order('sold_at', { ascending: false }),
     client.from('sale_items').select('*').order('created_at', { ascending: true }),
   ]);
+
+  if (brandsResult.error) {
+    throw new Error(brandsResult.error.message);
+  }
+
+  if (categoriesResult.error) {
+    throw new Error(categoriesResult.error.message);
+  }
 
   if (productsResult.error) {
     throw new Error(productsResult.error.message);
@@ -499,6 +584,8 @@ export async function fetchSupabaseInventorySlices(): Promise<
   }
 
   return {
+    brands: ((brandsResult.data ?? []) as BrandRow[]).map(mapBrandRowToModel),
+    categories: ((categoriesResult.data ?? []) as CategoryRow[]).map(mapCategoryRowToModel),
     products: ((productsResult.data ?? []) as ProductRow[]).map(mapProductRowToModel),
     variants: ((variantsResult.data ?? []) as ProductVariantRow[]).map(mapVariantRowToModel),
     suppliers: ((suppliersResult.data ?? []) as SupplierRow[]).map(mapSupplierRowToModel),
@@ -509,6 +596,94 @@ export async function fetchSupabaseInventorySlices(): Promise<
       mapSaleHeaderRowToModel(row, salesItemsBySaleId.get(row.id) ?? []),
     ),
   };
+}
+
+export async function saveSupabaseBrand(brand: Brand): Promise<RemoteEntityResult<Brand>> {
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from('brands')
+      .upsert(mapBrandToRow(brand))
+      .select()
+      .single();
+
+    if (error) {
+      return buildRemoteFailure(`Could not save the brand to Supabase: ${error.message}`);
+    }
+
+    return {
+      ok: true,
+      message: 'Brand saved successfully.',
+      recordId: data.id,
+      record: mapBrandRowToModel(data as BrandRow),
+    };
+  } catch (error) {
+    return buildRemoteFailure(
+      `Could not save the brand to Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
+    );
+  }
+}
+
+export async function deleteSupabaseBrand(brandId: string): Promise<OperationResult> {
+  try {
+    const client = getClient();
+    const { error } = await client.from('brands').delete().eq('id', brandId);
+
+    if (error) {
+      return buildRemoteFailure(`Could not delete the brand from Supabase: ${error.message}`);
+    }
+
+    return buildRemoteSuccess('Brand deleted successfully.', brandId);
+  } catch (error) {
+    return buildRemoteFailure(
+      `Could not delete the brand from Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
+    );
+  }
+}
+
+export async function saveSupabaseCategory(
+  category: Category,
+): Promise<RemoteEntityResult<Category>> {
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from('categories')
+      .upsert(mapCategoryToRow(category))
+      .select()
+      .single();
+
+    if (error) {
+      return buildRemoteFailure(`Could not save the category to Supabase: ${error.message}`);
+    }
+
+    return {
+      ok: true,
+      message: 'Category saved successfully.',
+      recordId: data.id,
+      record: mapCategoryRowToModel(data as CategoryRow),
+    };
+  } catch (error) {
+    return buildRemoteFailure(
+      `Could not save the category to Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
+    );
+  }
+}
+
+export async function deleteSupabaseCategory(categoryId: string): Promise<OperationResult> {
+  try {
+    const client = getClient();
+    const { error } = await client.from('categories').delete().eq('id', categoryId);
+
+    if (error) {
+      return buildRemoteFailure(`Could not delete the category from Supabase: ${error.message}`);
+    }
+
+    return buildRemoteSuccess('Category deleted successfully.', categoryId);
+  } catch (error) {
+    return buildRemoteFailure(
+      `Could not delete the category from Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
+    );
+  }
 }
 
 export async function saveSupabaseProduct(product: Product): Promise<RemoteEntityResult<Product>> {

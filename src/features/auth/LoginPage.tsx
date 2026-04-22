@@ -16,11 +16,12 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AppLogo } from '../../components/app/AppLogo';
 import { useAuth } from '../../contexts/AuthContext';
 import { useInventory } from '../../contexts/InventoryContext';
+import { isSupabaseConfigured } from '../../lib/supabase';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -34,10 +35,19 @@ export function LoginPage() {
   const nextPath =
     ((location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/dashboard');
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    if (demoAccounts.length === 0 || email || password) {
+      return;
+    }
+
+    setEmail(demoAccounts[0].email);
+    setPassword(demoAccounts[0].password);
+  }, [demoAccounts, email, password]);
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    const result = login(email, password);
+    const result = await login(email, password);
 
     if (!result.ok) {
       setError(result.message);
@@ -103,7 +113,9 @@ export function LoginPage() {
                         ? 'Database connected'
                         : isSyncing
                           ? 'Connecting...'
-                          : 'Mock mode'
+                          : isSupabaseConfigured
+                            ? 'Supabase unavailable'
+                            : 'Mock mode'
                     }
                     size="small"
                     sx={{ backgroundColor: 'rgba(255,255,255,0.16)', color: 'common.white' }}
@@ -173,11 +185,22 @@ export function LoginPage() {
               <Box>
                 <Typography variant="h5">Sign in</Typography>
                 <Typography color="text.secondary" sx={{ mt: 1 }} variant="body2">
-                  Use one of the demo accounts below while Supabase auth is not connected yet.
+                  {isDatabaseConnected
+                    ? 'Use an active account from the live workspace database.'
+                    : isSyncing
+                      ? 'Connecting to the live workspace data now.'
+                      : isSupabaseConfigured
+                        ? 'Supabase is configured but account data is not available yet.'
+                        : 'Use one of the local demo accounts below while Supabase env vars are not configured.'}
                 </Typography>
               </Box>
 
               {error && <Alert severity="error">{error}</Alert>}
+              {demoAccounts.length === 0 && !isSyncing && (
+                <Alert severity="info">
+                  No active sign-in accounts are available in the current database yet.
+                </Alert>
+              )}
 
               <Box
                 sx={{

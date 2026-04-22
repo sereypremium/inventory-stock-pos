@@ -73,8 +73,8 @@ export function UserManagementPage() {
   const adminUsers = users.filter((user) => user.role === 'admin').length;
   const cashierUsers = users.filter((user) => user.role === 'cashier').length;
 
-  const handleSave = (values: UserInput) => {
-    const result = editingUser ? updateUser(editingUser.id, values) : addUser(values);
+  const handleSave = async (values: UserInput) => {
+    const result = editingUser ? await updateUser(editingUser.id, values) : await addUser(values);
 
     setFeedback({
       severity: result.ok ? 'success' : 'error',
@@ -87,12 +87,12 @@ export function UserManagementPage() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!deleteTarget) {
       return;
     }
 
-    const result = deleteUser(deleteTarget.id);
+    const result = await deleteUser(deleteTarget.id);
 
     setFeedback({
       severity: result.ok ? 'success' : 'error',
@@ -134,7 +134,7 @@ export function UserManagementPage() {
         }}
       >
         <StatCard
-          helper="All local sign-in accounts"
+          helper="All sign-in accounts in the active workspace"
           icon={<ManageAccountsOutlinedIcon fontSize="small" />}
           label="Total Users"
           value={String(users.length)}
@@ -181,7 +181,7 @@ export function UserManagementPage() {
             }}
           />
         }
-        description="Users are stored locally in mock mode for now. Safeguards prevent removing the current session or the last active admin account."
+        description="Manage admin and cashier accounts from the active workspace data source. Safeguards prevent removing the current session or the last active admin account."
         title="Account Directory"
       >
         <TableContainer>
@@ -266,7 +266,9 @@ export function UserManagementPage() {
             : ''
         }
         onClose={() => setDeleteTarget(null)}
-        onConfirm={handleDelete}
+        onConfirm={() => {
+          void handleDelete();
+        }}
         open={Boolean(deleteTarget)}
         title="Delete user"
       />
@@ -283,7 +285,7 @@ function UserDialog({
   open: boolean;
   initialValue: AppUser | null;
   onClose: () => void;
-  onSubmit: (values: UserInput) => void;
+  onSubmit: (values: UserInput) => Promise<void>;
 }) {
   const [form, setForm] = useState<UserInput>(defaultUserForm);
 
@@ -312,7 +314,7 @@ function UserDialog({
         component="form"
         onSubmit={(event) => {
           event.preventDefault();
-          onSubmit(form);
+          void onSubmit(form);
         }}
       >
         <DialogContent>
@@ -342,7 +344,7 @@ function UserDialog({
               value={form.email}
             />
             <TextField
-              helperText="Stored locally in mock mode."
+              helperText="Used for workspace sign-in."
               label="Password"
               onChange={(event) =>
                 setForm((current) => ({ ...current, password: event.target.value }))
