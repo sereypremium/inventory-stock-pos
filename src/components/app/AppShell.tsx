@@ -2,6 +2,7 @@ import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import MenuOutlinedIcon from '@mui/icons-material/MenuOutlined';
 import {
+  Alert,
   AppBar,
   Avatar,
   Box,
@@ -25,6 +26,7 @@ import { AppLogo } from './AppLogo';
 import { futureModules, navigationItems } from '../../config/navigation';
 import { useAuth } from '../../contexts/AuthContext';
 import { useInventory } from '../../contexts/InventoryContext';
+import { isSupabaseConfigured } from '../../lib/supabase';
 
 const drawerWidth = 272;
 
@@ -122,7 +124,9 @@ export function AppShell() {
                     ? 'Database connected'
                     : isSyncing
                       ? 'Connecting...'
-                      : 'Mock mode'
+                      : isSupabaseConfigured
+                        ? 'Supabase unavailable'
+                        : 'Mock mode'
                 }
                 size="small"
                 variant={isDatabaseConnected ? 'filled' : 'outlined'}
@@ -209,6 +213,13 @@ export function AppShell() {
           py: { xs: 11, md: 12 },
         }}
       >
+        {!isDatabaseConnected && !isSyncing && (
+          <Alert severity={isSupabaseConfigured ? 'warning' : 'info'} sx={{ mb: 2 }}>
+            {isSupabaseConfigured
+              ? 'Supabase is configured but the app could not sync live data. The current screen may still reflect local browser data instead of the database.'
+              : 'Supabase env vars are missing in this app runtime. The current screen is using mock/browser data, so it will not match empty tables in Supabase until VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are provided.'}
+          </Alert>
+        )}
         <Outlet />
       </Box>
     </Box>
