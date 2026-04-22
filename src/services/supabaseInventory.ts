@@ -6,6 +6,9 @@ import type {
   ProductVariant,
   SaleItem,
   SaleRecord,
+  StockInItem,
+  StockInRecord,
+  Supplier,
 } from '../types/models';
 
 interface ProductRow {
@@ -37,6 +40,49 @@ interface ProductVariantRow {
   stock_qty: number;
   min_stock: number;
   status: ProductVariant['status'];
+}
+
+interface SupplierRow {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  name: string;
+  code: string;
+  contact_person: string;
+  phone: string;
+  email: string;
+  address: string;
+  status: Supplier['status'];
+}
+
+interface PurchaseHeaderRow {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  reference_no: string;
+  supplier_id: string;
+  supplier_name: string;
+  received_date: string;
+  received_by: string;
+  note: string;
+  total_items: number;
+  total_quantity: number;
+  total_cost: number;
+}
+
+interface PurchaseItemRow {
+  id: string;
+  created_at: string;
+  purchase_id: string;
+  product_id: string;
+  variant_id: string;
+  product_name: string;
+  variant_sku: string;
+  size: string;
+  color: string;
+  quantity: number;
+  unit_cost: number;
+  line_total: number;
 }
 
 interface SaleHeaderRow {
@@ -182,6 +228,112 @@ function mapVariantToRow(variant: ProductVariant): ProductVariantRow {
   };
 }
 
+function mapSupplierRowToModel(row: SupplierRow): Supplier {
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    name: row.name,
+    code: row.code,
+    contactPerson: row.contact_person ?? '',
+    phone: row.phone ?? '',
+    email: row.email ?? '',
+    address: row.address ?? '',
+    status: row.status,
+  };
+}
+
+function mapSupplierToRow(supplier: Supplier): SupplierRow {
+  return {
+    id: supplier.id,
+    created_at: supplier.createdAt,
+    updated_at: supplier.updatedAt,
+    name: supplier.name,
+    code: supplier.code,
+    contact_person: supplier.contactPerson,
+    phone: supplier.phone,
+    email: supplier.email,
+    address: supplier.address,
+    status: supplier.status,
+  };
+}
+
+function mapPurchaseItemRowToModel(row: PurchaseItemRow): StockInItem {
+  return {
+    id: row.id,
+    productId: row.product_id,
+    variantId: row.variant_id,
+    productName: row.product_name,
+    variantSku: row.variant_sku,
+    size: row.size,
+    color: row.color,
+    quantity: Number(row.quantity) || 0,
+    unitCost: Number(row.unit_cost) || 0,
+    lineTotal: Number(row.line_total) || 0,
+  };
+}
+
+function mapPurchaseHeaderRowToModel(
+  row: PurchaseHeaderRow,
+  itemRows: PurchaseItemRow[],
+): StockInRecord {
+  const items = itemRows.map(mapPurchaseItemRowToModel);
+
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    referenceNo: row.reference_no,
+    supplierId: row.supplier_id,
+    supplierName: row.supplier_name,
+    receivedDate: row.received_date,
+    receivedBy: row.received_by,
+    note: row.note ?? '',
+    items,
+    totalItems: Number(row.total_items) || items.length,
+    totalQuantity: Number(row.total_quantity) || items.reduce((total, item) => total + item.quantity, 0),
+    totalCost: Number(row.total_cost) || items.reduce((total, item) => total + item.lineTotal, 0),
+  };
+}
+
+function mapPurchaseHeaderToRow(stockIn: StockInRecord): PurchaseHeaderRow {
+  return {
+    id: stockIn.id,
+    created_at: stockIn.createdAt,
+    updated_at: stockIn.updatedAt,
+    reference_no: stockIn.referenceNo,
+    supplier_id: stockIn.supplierId,
+    supplier_name: stockIn.supplierName,
+    received_date: stockIn.receivedDate,
+    received_by: stockIn.receivedBy,
+    note: stockIn.note ?? '',
+    total_items: Number(stockIn.totalItems) || stockIn.items.length,
+    total_quantity: Number(stockIn.totalQuantity) || 0,
+    total_cost: Number(stockIn.totalCost) || 0,
+  };
+}
+
+function mapPurchaseItemToRow(
+  item: StockInItem,
+  purchaseId: string,
+  createdAt: string,
+): PurchaseItemRow {
+  return {
+    id: item.id,
+    created_at: createdAt,
+    purchase_id: purchaseId,
+    product_id: item.productId,
+    variant_id: item.variantId,
+    product_name: item.productName,
+    variant_sku: item.variantSku,
+    size: item.size,
+    color: item.color,
+    quantity: Number(item.quantity) || 0,
+    unit_cost: Number(item.unitCost) || 0,
+    line_total: Number(item.lineTotal) || 0,
+  };
+}
+
 function mapSaleItemRowToModel(row: SaleItemRow): SaleItem {
   return {
     id: row.id,
@@ -274,13 +426,31 @@ async function rollbackInsertedSale(saleId: string) {
   await client.from('sale_headers').delete().eq('id', saleId);
 }
 
+async function rollbackInsertedPurchase(purchaseId: string) {
+  const client = getClient();
+
+  await client.from('purchase_items').delete().eq('purchase_id', purchaseId);
+  await client.from('purchase_headers').delete().eq('id', purchaseId);
+}
+
 export async function fetchSupabaseInventorySlices(): Promise<
-  Pick<InventoryState, 'products' | 'variants' | 'sales'>
+  Pick<InventoryState, 'products' | 'variants' | 'suppliers' | 'stockIns' | 'sales'>
 > {
   const client = getClient();
-  const [productsResult, variantsResult, saleHeadersResult, saleItemsResult] = await Promise.all([
+  const [
+    productsResult,
+    variantsResult,
+    suppliersResult,
+    purchaseHeadersResult,
+    purchaseItemsResult,
+    saleHeadersResult,
+    saleItemsResult,
+  ] = await Promise.all([
     client.from('products').select('*').order('created_at', { ascending: false }),
     client.from('product_variants').select('*').order('created_at', { ascending: false }),
+    client.from('suppliers').select('*').order('created_at', { ascending: false }),
+    client.from('purchase_headers').select('*').order('received_date', { ascending: false }),
+    client.from('purchase_items').select('*').order('created_at', { ascending: true }),
     client.from('sale_headers').select('*').order('sold_at', { ascending: false }),
     client.from('sale_items').select('*').order('created_at', { ascending: true }),
   ]);
@@ -293,6 +463,18 @@ export async function fetchSupabaseInventorySlices(): Promise<
     throw new Error(variantsResult.error.message);
   }
 
+  if (suppliersResult.error) {
+    throw new Error(suppliersResult.error.message);
+  }
+
+  if (purchaseHeadersResult.error) {
+    throw new Error(purchaseHeadersResult.error.message);
+  }
+
+  if (purchaseItemsResult.error) {
+    throw new Error(purchaseItemsResult.error.message);
+  }
+
   if (saleHeadersResult.error) {
     throw new Error(saleHeadersResult.error.message);
   }
@@ -302,6 +484,13 @@ export async function fetchSupabaseInventorySlices(): Promise<
   }
 
   const salesItemsBySaleId = new Map<string, SaleItemRow[]>();
+  const purchaseItemsByPurchaseId = new Map<string, PurchaseItemRow[]>();
+
+  for (const row of (purchaseItemsResult.data ?? []) as PurchaseItemRow[]) {
+    const currentRows = purchaseItemsByPurchaseId.get(row.purchase_id) ?? [];
+    currentRows.push(row);
+    purchaseItemsByPurchaseId.set(row.purchase_id, currentRows);
+  }
 
   for (const row of (saleItemsResult.data ?? []) as SaleItemRow[]) {
     const currentRows = salesItemsBySaleId.get(row.sale_id) ?? [];
@@ -312,6 +501,10 @@ export async function fetchSupabaseInventorySlices(): Promise<
   return {
     products: ((productsResult.data ?? []) as ProductRow[]).map(mapProductRowToModel),
     variants: ((variantsResult.data ?? []) as ProductVariantRow[]).map(mapVariantRowToModel),
+    suppliers: ((suppliersResult.data ?? []) as SupplierRow[]).map(mapSupplierRowToModel),
+    stockIns: ((purchaseHeadersResult.data ?? []) as PurchaseHeaderRow[]).map((row) =>
+      mapPurchaseHeaderRowToModel(row, purchaseItemsByPurchaseId.get(row.id) ?? []),
+    ),
     sales: ((saleHeadersResult.data ?? []) as SaleHeaderRow[]).map((row) =>
       mapSaleHeaderRowToModel(row, salesItemsBySaleId.get(row.id) ?? []),
     ),
@@ -389,29 +582,6 @@ export async function saveSupabaseVariant(
   }
 }
 
-export async function saveSupabaseVariantsBatch(
-  variants: ProductVariant[],
-): Promise<OperationResult> {
-  try {
-    const client = getClient();
-    const { error } = await client
-      .from('product_variants')
-      .upsert(variants.map(mapVariantToRow));
-
-    if (error) {
-      return buildRemoteFailure(
-        `Could not sync variant stock to Supabase: ${error.message}`,
-      );
-    }
-
-    return buildRemoteSuccess('Variants synced successfully.');
-  } catch (error) {
-    return buildRemoteFailure(
-      `Could not sync variant stock to Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
-    );
-  }
-}
-
 export async function deleteSupabaseVariant(variantId: string): Promise<OperationResult> {
   try {
     const client = getClient();
@@ -425,6 +595,97 @@ export async function deleteSupabaseVariant(variantId: string): Promise<Operatio
   } catch (error) {
     return buildRemoteFailure(
       `Could not delete the variant from Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
+    );
+  }
+}
+
+export async function saveSupabaseSupplier(
+  supplier: Supplier,
+): Promise<RemoteEntityResult<Supplier>> {
+  try {
+    const client = getClient();
+    const { data, error } = await client
+      .from('suppliers')
+      .upsert(mapSupplierToRow(supplier))
+      .select()
+      .single();
+
+    if (error) {
+      return buildRemoteFailure(`Could not save the supplier to Supabase: ${error.message}`);
+    }
+
+    return {
+      ok: true,
+      message: 'Supplier saved successfully.',
+      recordId: data.id,
+      record: mapSupplierRowToModel(data as SupplierRow),
+    };
+  } catch (error) {
+    return buildRemoteFailure(
+      `Could not save the supplier to Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
+    );
+  }
+}
+
+export async function deleteSupabaseSupplier(supplierId: string): Promise<OperationResult> {
+  try {
+    const client = getClient();
+    const { error } = await client.from('suppliers').delete().eq('id', supplierId);
+
+    if (error) {
+      return buildRemoteFailure(`Could not delete the supplier from Supabase: ${error.message}`);
+    }
+
+    return buildRemoteSuccess('Supplier deleted successfully.', supplierId);
+  } catch (error) {
+    return buildRemoteFailure(
+      `Could not delete the supplier from Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
+    );
+  }
+}
+
+export async function createSupabasePurchaseTransaction(
+  stockIn: StockInRecord,
+  updatedVariants: ProductVariant[],
+): Promise<OperationResult> {
+  try {
+    const client = getClient();
+    const purchaseHeaderRow = mapPurchaseHeaderToRow(stockIn);
+    const purchaseItemRows = stockIn.items.map((item) =>
+      mapPurchaseItemToRow(item, stockIn.id, stockIn.createdAt),
+    );
+
+    const headerInsert = await client.from('purchase_headers').insert(purchaseHeaderRow);
+
+    if (headerInsert.error) {
+      return buildRemoteFailure(
+        `Could not save the purchase header to Supabase: ${headerInsert.error.message}`,
+      );
+    }
+
+    const itemsInsert = await client.from('purchase_items').insert(purchaseItemRows);
+
+    if (itemsInsert.error) {
+      await rollbackInsertedPurchase(stockIn.id);
+      return buildRemoteFailure(
+        `Could not save the purchase items to Supabase: ${itemsInsert.error.message}`,
+      );
+    }
+
+    const variantRows = updatedVariants.map(mapVariantToRow);
+    const variantsUpdate = await client.from('product_variants').upsert(variantRows);
+
+    if (variantsUpdate.error) {
+      await rollbackInsertedPurchase(stockIn.id);
+      return buildRemoteFailure(
+        `Could not update stock in Supabase: ${variantsUpdate.error.message}`,
+      );
+    }
+
+    return buildRemoteSuccess('Stock in saved successfully.', stockIn.id);
+  } catch (error) {
+    return buildRemoteFailure(
+      `Could not save the stock in transaction to Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
     );
   }
 }

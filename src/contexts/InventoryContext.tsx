@@ -6,13 +6,15 @@ import { validateSupplierInput } from '../services/inventoryValidation';
 import { createSaleTransaction } from '../services/salesService';
 import { createStockInTransaction } from '../services/stockInService';
 import {
+  createSupabasePurchaseTransaction,
   createSupabaseSaleTransaction,
+  deleteSupabaseSupplier,
   deleteSupabaseProduct,
   deleteSupabaseVariant,
   fetchSupabaseInventorySlices,
   saveSupabaseProduct,
+  saveSupabaseSupplier,
   saveSupabaseVariant,
-  saveSupabaseVariantsBatch,
 } from '../services/supabaseInventory';
 import type {
   Brand,
@@ -116,22 +118,38 @@ function normalizeInventoryState(value?: Partial<InventoryState> | null): Invent
   };
 }
 
+function createSupabaseBootState(baseState: InventoryState): InventoryState {
+  return {
+    ...baseState,
+    products: [],
+    variants: [],
+    suppliers: [],
+    stockIns: [],
+    sales: [],
+  };
+}
+
 function getInitialState() {
+  const fallbackState = isSupabaseConfigured
+    ? createSupabaseBootState(normalizeInventoryState())
+    : mockInventoryState;
+
   if (typeof window === 'undefined') {
-    return mockInventoryState;
+    return fallbackState;
   }
 
   const storedState = localStorage.getItem(STORAGE_KEY);
 
   if (!storedState) {
-    return mockInventoryState;
+    return fallbackState;
   }
 
   try {
-    return normalizeInventoryState(JSON.parse(storedState) as Partial<InventoryState>);
+    const normalizedState = normalizeInventoryState(JSON.parse(storedState) as Partial<InventoryState>);
+    return isSupabaseConfigured ? createSupabaseBootState(normalizedState) : normalizedState;
   } catch {
     localStorage.removeItem(STORAGE_KEY);
-    return mockInventoryState;
+    return fallbackState;
   }
 }
 
@@ -195,6 +213,8 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
             ...current,
             products: remoteSlices.products,
             variants: remoteSlices.variants,
+            suppliers: remoteSlices.suppliers,
+            stockIns: remoteSlices.stockIns,
             sales: remoteSlices.sales,
           }),
         );
@@ -687,7 +707,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return buildFailure('Supplier code already exists.');
       }
 
-      const nextSupplier: Supplier = {
+      let nextSupplier: Supplier = {
         id: crypto.randomUUID(),
         ...createTimestamps(),
         name: input.name.trim(),
@@ -698,6 +718,16 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         address: input.address.trim(),
         status: input.status,
       };
+
+      if (dataSource === 'supabase') {
+        const remoteResult = await saveSupabaseSupplier(nextSupplier);
+
+        if (!remoteResult.ok || !remoteResult.record) {
+          return buildFailure(remoteResult.message);
+        }
+
+        nextSupplier = remoteResult.record;
+      }
 
       commitState((current) => ({
         ...current,
@@ -723,22 +753,38 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return buildFailure('Supplier code already exists.');
       }
 
+      const currentSupplier = state.suppliers.find((supplier) => supplier.id === supplierId);
+
+      if (!currentSupplier) {
+        return buildFailure('Supplier could not be found.');
+      }
+
+      let nextSupplier: Supplier = {
+        ...currentSupplier,
+        name: input.name.trim(),
+        code: input.code.trim().toUpperCase(),
+        contactPerson: input.contactPerson.trim(),
+        phone: input.phone.trim(),
+        email: input.email.trim().toLowerCase(),
+        address: input.address.trim(),
+        status: input.status,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (dataSource === 'supabase') {
+        const remoteResult = await saveSupabaseSupplier(nextSupplier);
+
+        if (!remoteResult.ok || !remoteResult.record) {
+          return buildFailure(remoteResult.message);
+        }
+
+        nextSupplier = remoteResult.record;
+      }
+
       commitState((current) => ({
         ...current,
         suppliers: current.suppliers.map((supplier) =>
-          supplier.id === supplierId
-            ? {
-                ...supplier,
-                name: input.name.trim(),
-                code: input.code.trim().toUpperCase(),
-                contactPerson: input.contactPerson.trim(),
-                phone: input.phone.trim(),
-                email: input.email.trim().toLowerCase(),
-                address: input.address.trim(),
-                status: input.status,
-                updatedAt: new Date().toISOString(),
-              }
-            : supplier,
+          supplier.id === supplierId ? nextSupplier : supplier,
         ),
       }));
 
@@ -753,6 +799,14 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         return buildFailure(
           'This supplier already has stock in transactions. Keep it for purchasing history.',
         );
+      }
+
+      if (dataSource === 'supabase') {
+        const remoteResult = await deleteSupabaseSupplier(supplierId);
+
+        if (!remoteResult.ok) {
+          return buildFailure(remoteResult.message);
+        }
       }
 
       commitState((current) => ({
@@ -770,11 +824,19 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       }
 
       if (dataSource === 'supabase') {
+        const stockIn = result.nextState.stockIns.find((entry) => entry.id === result.recordId);
+
+        if (!stockIn) {
+          return buildFailure(
+            'Stock in was created locally but could not be prepared for Supabase.',
+          );
+        }
+
         const changedVariantIds = new Set(input.items.map((item) => item.variantId));
         const changedVariants = result.nextState.variants.filter((variant) =>
           changedVariantIds.has(variant.id),
         );
-        const remoteResult = await saveSupabaseVariantsBatch(changedVariants);
+        const remoteResult = await createSupabasePurchaseTransaction(stockIn, changedVariants);
 
         if (!remoteResult.ok) {
           return buildFailure(remoteResult.message);

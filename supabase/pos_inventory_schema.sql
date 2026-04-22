@@ -17,7 +17,9 @@ create table if not exists public.product_variants (
   id text primary key,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now()),
-  product_id text not null references public.products(id) on delete restrict,
+  -- Legacy deployments may still use bigint primary keys, so cross-table FKs are
+  -- enforced in the app/service layer instead of this upgrade-safe migration.
+  product_id text not null,
   sku text not null unique,
   barcode text,
   size text not null,
@@ -28,6 +30,49 @@ create table if not exists public.product_variants (
   min_stock integer not null default 0,
   status text not null default 'active' check (status in ('active', 'inactive')),
   constraint product_variants_product_size_color_unique unique (product_id, size, color)
+);
+
+create table if not exists public.suppliers (
+  id text primary key,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  name text not null,
+  code text not null,
+  contact_person text not null default '',
+  phone text not null default '',
+  email text not null default '',
+  address text not null default '',
+  status text not null default 'active' check (status in ('active', 'inactive'))
+);
+
+create table if not exists public.purchase_headers (
+  id text primary key,
+  created_at timestamptz not null default timezone('utc', now()),
+  updated_at timestamptz not null default timezone('utc', now()),
+  reference_no text not null,
+  supplier_id text not null,
+  supplier_name text not null,
+  received_date date not null,
+  received_by text not null,
+  note text not null default '',
+  total_items integer not null default 0,
+  total_quantity integer not null default 0,
+  total_cost numeric(12, 2) not null default 0
+);
+
+create table if not exists public.purchase_items (
+  id text primary key,
+  created_at timestamptz not null default timezone('utc', now()),
+  purchase_id text not null,
+  product_id text not null,
+  variant_id text not null,
+  product_name text not null,
+  variant_sku text not null,
+  size text not null,
+  color text not null,
+  quantity integer not null default 0,
+  unit_cost numeric(12, 2) not null default 0,
+  line_total numeric(12, 2) not null default 0
 );
 
 create table if not exists public.sale_headers (
@@ -53,9 +98,9 @@ create table if not exists public.sale_headers (
 create table if not exists public.sale_items (
   id text primary key,
   created_at timestamptz not null default timezone('utc', now()),
-  sale_id text not null references public.sale_headers(id) on delete cascade,
-  product_id text not null references public.products(id) on delete restrict,
-  variant_id text not null references public.product_variants(id) on delete restrict,
+  sale_id text not null,
+  product_id text not null,
+  variant_id text not null,
   product_name text not null,
   variant_sku text not null,
   size text not null,
@@ -92,6 +137,40 @@ alter table if exists public.product_variants add column if not exists cost_pric
 alter table if exists public.product_variants add column if not exists stock_qty integer not null default 0;
 alter table if exists public.product_variants add column if not exists min_stock integer not null default 0;
 alter table if exists public.product_variants add column if not exists status text not null default 'active';
+
+alter table if exists public.suppliers add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table if exists public.suppliers add column if not exists updated_at timestamptz not null default timezone('utc', now());
+alter table if exists public.suppliers add column if not exists name text not null default '';
+alter table if exists public.suppliers add column if not exists code text not null default '';
+alter table if exists public.suppliers add column if not exists contact_person text not null default '';
+alter table if exists public.suppliers add column if not exists phone text not null default '';
+alter table if exists public.suppliers add column if not exists email text not null default '';
+alter table if exists public.suppliers add column if not exists address text not null default '';
+alter table if exists public.suppliers add column if not exists status text not null default 'active';
+
+alter table if exists public.purchase_headers add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table if exists public.purchase_headers add column if not exists updated_at timestamptz not null default timezone('utc', now());
+alter table if exists public.purchase_headers add column if not exists reference_no text not null default '';
+alter table if exists public.purchase_headers add column if not exists supplier_id text;
+alter table if exists public.purchase_headers add column if not exists supplier_name text not null default '';
+alter table if exists public.purchase_headers add column if not exists received_date date not null default current_date;
+alter table if exists public.purchase_headers add column if not exists received_by text not null default '';
+alter table if exists public.purchase_headers add column if not exists note text not null default '';
+alter table if exists public.purchase_headers add column if not exists total_items integer not null default 0;
+alter table if exists public.purchase_headers add column if not exists total_quantity integer not null default 0;
+alter table if exists public.purchase_headers add column if not exists total_cost numeric(12, 2) not null default 0;
+
+alter table if exists public.purchase_items add column if not exists created_at timestamptz not null default timezone('utc', now());
+alter table if exists public.purchase_items add column if not exists purchase_id text;
+alter table if exists public.purchase_items add column if not exists product_id text;
+alter table if exists public.purchase_items add column if not exists variant_id text;
+alter table if exists public.purchase_items add column if not exists product_name text not null default '';
+alter table if exists public.purchase_items add column if not exists variant_sku text not null default '';
+alter table if exists public.purchase_items add column if not exists size text not null default '';
+alter table if exists public.purchase_items add column if not exists color text not null default '';
+alter table if exists public.purchase_items add column if not exists quantity integer not null default 0;
+alter table if exists public.purchase_items add column if not exists unit_cost numeric(12, 2) not null default 0;
+alter table if exists public.purchase_items add column if not exists line_total numeric(12, 2) not null default 0;
 
 alter table if exists public.sale_headers add column if not exists created_at timestamptz not null default timezone('utc', now());
 alter table if exists public.sale_headers add column if not exists updated_at timestamptz not null default timezone('utc', now());
@@ -157,6 +236,176 @@ begin
     execute '
       update public.products
       set target_group = coalesce(nullif(target_group::text, ''''), gender::text, ''unisex'')
+    ';
+  end if;
+end $$;
+
+do $$
+begin
+  update public.suppliers
+  set code = upper(
+    left(regexp_replace(coalesce(name::text, 'SUPPLIER'), '[^A-Za-z0-9]+', '', 'g'), 5) ||
+    right(regexp_replace(coalesce(id::text, 'SUP'), '[^A-Za-z0-9]+', '', 'g'), 3)
+  )
+  where coalesce(nullif(code::text, ''), '') = '';
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_headers' and column_name = 'purchase_no'
+  ) then
+    execute '
+      update public.purchase_headers
+      set reference_no = coalesce(nullif(reference_no::text, ''''), purchase_no::text)
+    ';
+  end if;
+
+  update public.purchase_headers
+  set reference_no = coalesce(
+    nullif(reference_no::text, ''),
+    'PO-' || upper(right(regexp_replace(coalesce(id::text, 'PO'), '[^A-Za-z0-9]+', '', 'g'), 8))
+  )
+  where coalesce(nullif(reference_no::text, ''), '') = '';
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_headers' and column_name = 'purchase_date'
+  ) then
+    execute '
+      update public.purchase_headers
+      set received_date = coalesce(purchase_date::date, received_date)
+    ';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_headers' and column_name = 'created_by'
+  ) then
+    execute '
+      update public.purchase_headers
+      set received_by = coalesce(nullif(received_by::text, ''''), created_by::text)
+    ';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_headers' and column_name = 'notes'
+  ) then
+    execute '
+      update public.purchase_headers
+      set note = coalesce(nullif(note::text, ''''), notes::text)
+    ';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_headers' and column_name = 'total_qty'
+  ) then
+    execute '
+      update public.purchase_headers
+      set total_quantity = case
+        when coalesce(total_quantity, 0) = 0 then coalesce(total_qty, 0)
+        else total_quantity
+      end
+    ';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_headers' and column_name = 'total_amount'
+  ) then
+    execute '
+      update public.purchase_headers
+      set total_cost = case
+        when coalesce(total_cost, 0) = 0 then coalesce(total_amount, 0)
+        else total_cost
+      end
+    ';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.tables
+    where table_schema = 'public' and table_name = 'suppliers'
+  ) then
+    execute '
+      update public.purchase_headers ph
+      set supplier_name = coalesce(nullif(ph.supplier_name::text, ''''), s.name::text)
+      from public.suppliers s
+      where s.id::text = ph.supplier_id::text
+    ';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.tables
+    where table_schema = 'public' and table_name = 'profiles'
+  ) and exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_headers' and column_name = 'created_by'
+  ) then
+    execute '
+      update public.purchase_headers ph
+      set received_by = coalesce(nullif(ph.received_by::text, ''''), p.full_name::text, ph.created_by::text)
+      from public.profiles p
+      where p.id::text = ph.created_by::text
+    ';
+  end if;
+
+  update public.purchase_headers
+  set supplier_name = coalesce(nullif(supplier_name::text, ''), supplier_id::text, 'Unknown Supplier');
+
+  update public.purchase_headers
+  set received_by = coalesce(nullif(received_by::text, ''), 'Store Admin');
+end $$;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_items' and column_name = 'product_variant_id'
+  ) then
+    execute '
+      update public.purchase_items
+      set variant_id = coalesce(nullif(variant_id::text, ''''), product_variant_id::text)
+    ';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_items' and column_name = 'qty'
+  ) then
+    execute '
+      update public.purchase_items
+      set quantity = case
+        when coalesce(quantity, 0) = 0 then coalesce(qty, 0)
+        else quantity
+      end
+    ';
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public' and table_name = 'purchase_items' and column_name = 'cost_price'
+  ) then
+    execute '
+      update public.purchase_items
+      set unit_cost = case
+        when coalesce(unit_cost, 0) = 0 then coalesce(cost_price, 0)
+        else unit_cost
+      end
     ';
   end if;
 end $$;
@@ -334,6 +583,49 @@ end $$;
 
 do $$
 begin
+  update public.purchase_items pi
+  set
+    product_id = coalesce(nullif(pi.product_id::text, ''), pv.product_id::text),
+    variant_sku = coalesce(nullif(pi.variant_sku::text, ''), pv.sku::text),
+    size = coalesce(nullif(pi.size::text, ''), pv.size::text),
+    color = coalesce(nullif(pi.color::text, ''), pv.color::text),
+    unit_cost = coalesce(nullif(pi.unit_cost, 0), pv.cost_price, 0),
+    line_total = case
+      when coalesce(pi.line_total, 0) = 0 then coalesce(pi.quantity, 0) * coalesce(nullif(pi.unit_cost, 0), pv.cost_price, 0)
+      else pi.line_total
+    end
+  from public.product_variants pv
+  where pv.id::text = pi.variant_id::text;
+
+  update public.purchase_items pi
+  set product_name = coalesce(nullif(pi.product_name::text, ''), p.name::text)
+  from public.products p
+  where p.id::text = pi.product_id::text;
+end $$;
+
+do $$
+begin
+  update public.purchase_headers ph
+  set
+    total_items = item_totals.total_items,
+    total_quantity = case
+      when coalesce(ph.total_quantity, 0) = 0 then item_totals.total_quantity
+      else ph.total_quantity
+    end,
+    total_cost = case
+      when coalesce(ph.total_cost, 0) = 0 then item_totals.total_cost
+      else ph.total_cost
+    end
+  from (
+    select purchase_id::text as purchase_id, count(*) as total_items, coalesce(sum(quantity), 0) as total_quantity, coalesce(sum(line_total), 0) as total_cost
+    from public.purchase_items
+    group by purchase_id::text
+  ) item_totals
+  where ph.id::text = item_totals.purchase_id;
+end $$;
+
+do $$
+begin
   update public.products p
   set base_price = coalesce(price_map.min_price, p.base_price)
   from (
@@ -401,6 +693,12 @@ create index if not exists products_brand_id_idx on public.products(brand_id);
 create index if not exists products_category_id_idx on public.products(category_id);
 create index if not exists product_variants_product_id_idx on public.product_variants(product_id);
 create index if not exists product_variants_barcode_idx on public.product_variants(barcode);
+create unique index if not exists suppliers_code_idx on public.suppliers(code);
+create index if not exists purchase_headers_reference_no_idx on public.purchase_headers(reference_no);
+create index if not exists purchase_headers_supplier_id_idx on public.purchase_headers(supplier_id);
+create index if not exists purchase_headers_received_date_idx on public.purchase_headers(received_date desc);
+create index if not exists purchase_items_purchase_id_idx on public.purchase_items(purchase_id);
+create index if not exists purchase_items_variant_id_idx on public.purchase_items(variant_id);
 create index if not exists sale_headers_receipt_no_idx on public.sale_headers(receipt_no);
 create index if not exists sale_headers_sold_at_idx on public.sale_headers(sold_at desc);
 create index if not exists sale_items_sale_id_idx on public.sale_items(sale_id);
@@ -408,11 +706,17 @@ create index if not exists sale_items_variant_id_idx on public.sale_items(varian
 
 alter table public.products enable row level security;
 alter table public.product_variants enable row level security;
+alter table public.suppliers enable row level security;
+alter table public.purchase_headers enable row level security;
+alter table public.purchase_items enable row level security;
 alter table public.sale_headers enable row level security;
 alter table public.sale_items enable row level security;
 
 drop policy if exists "products_dev_all" on public.products;
 drop policy if exists "product_variants_dev_all" on public.product_variants;
+drop policy if exists "suppliers_dev_all" on public.suppliers;
+drop policy if exists "purchase_headers_dev_all" on public.purchase_headers;
+drop policy if exists "purchase_items_dev_all" on public.purchase_items;
 drop policy if exists "sale_headers_dev_all" on public.sale_headers;
 drop policy if exists "sale_items_dev_all" on public.sale_items;
 
@@ -425,6 +729,27 @@ with check (true);
 
 create policy "product_variants_dev_all"
 on public.product_variants
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "suppliers_dev_all"
+on public.suppliers
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "purchase_headers_dev_all"
+on public.purchase_headers
+for all
+to anon, authenticated
+using (true)
+with check (true);
+
+create policy "purchase_items_dev_all"
+on public.purchase_items
 for all
 to anon, authenticated
 using (true)
