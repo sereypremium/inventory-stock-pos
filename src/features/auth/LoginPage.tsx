@@ -29,6 +29,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { isSupabaseConfigured } from '../../lib/supabase';
 
 const desktopBreakpoint = '@media (min-width:1024px)';
+const mobileBreakpoint = '@media (max-width:767px)';
 const tabletBreakpoint = '@media (min-width:768px) and (max-width:1023px)';
 const heroBootImage = '/product-images/mercurial-vapor-16.svg';
 
@@ -157,6 +158,11 @@ function LoginHeroDesktop() {
         overflow: 'hidden',
         p: { xs: 2.5, sm: 3.5 },
         position: 'relative',
+        [mobileBreakpoint]: {
+          minHeight: 356,
+          pb: 6,
+          pt: 3.25,
+        },
         [tabletBreakpoint]: {
           minHeight: 372,
           p: 4,
@@ -257,9 +263,13 @@ function LoginHeroDesktop() {
         sx={{
           alignItems: { xs: 'center', md: 'stretch' },
           height: '100%',
+          minHeight: { xs: 246, sm: 'auto' },
           position: 'relative',
           textAlign: { xs: 'center', md: 'left' },
           zIndex: 1,
+          [mobileBreakpoint]: {
+            justifyContent: 'center',
+          },
           [desktopBreakpoint]: {
             justifyContent: 'space-between',
           },
@@ -505,10 +515,14 @@ function LoginFormCard({
         boxShadow: { xs: '0 -18px 44px rgba(3, 19, 13, 0.16)', md: 'none' },
         display: 'flex',
         flex: 1,
-        mt: { xs: -32, md: 0 },
+        mt: { xs: -18, md: 0 },
         p: { xs: 2.5, sm: 3.75 },
         position: 'relative',
         zIndex: 3,
+        [mobileBreakpoint]: {
+          borderTopLeftRadius: 26,
+          borderTopRightRadius: 26,
+        },
         [tabletBreakpoint]: {
           borderTopLeftRadius: 32,
           borderTopRightRadius: 32,
