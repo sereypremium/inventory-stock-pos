@@ -196,14 +196,12 @@ create table if not exists public.product_variants (
   barcode text,
   size text not null default '',
   color text not null default '',
-  selling_price numeric(12, 2) not null default 0,
   cost_price numeric(12, 2) not null default 0,
+  sale_price numeric(12, 2) not null default 0,
   stock_qty integer not null default 0,
-  min_stock integer not null default 0,
-  image_url text,
+  min_stock_qty integer not null default 0,
   status text not null default 'active',
-  created_at timestamptz not null default timezone('utc', now()),
-  updated_at timestamptz not null default timezone('utc', now())
+  created_at timestamptz not null default timezone('utc', now())
 );
 
 alter table public.product_variants add column if not exists product_id uuid;
@@ -211,49 +209,12 @@ alter table public.product_variants add column if not exists sku text;
 alter table public.product_variants add column if not exists barcode text;
 alter table public.product_variants add column if not exists size text;
 alter table public.product_variants add column if not exists color text;
-alter table public.product_variants add column if not exists selling_price numeric(12, 2);
 alter table public.product_variants add column if not exists cost_price numeric(12, 2);
+alter table public.product_variants add column if not exists sale_price numeric(12, 2);
 alter table public.product_variants add column if not exists stock_qty integer;
-alter table public.product_variants add column if not exists min_stock integer;
-alter table public.product_variants add column if not exists image_url text;
+alter table public.product_variants add column if not exists min_stock_qty integer;
 alter table public.product_variants add column if not exists status text;
 alter table public.product_variants add column if not exists created_at timestamptz;
-alter table public.product_variants add column if not exists updated_at timestamptz;
-
-do $$
-begin
-  if exists (
-    select 1
-    from information_schema.columns
-    where table_schema = 'public'
-      and table_name = 'product_variants'
-      and column_name = 'sale_price'
-  ) then
-    execute '
-      update public.product_variants
-      set selling_price = case
-        when coalesce(selling_price, 0) = 0 then coalesce(sale_price, 0)
-        else selling_price
-      end
-    ';
-  end if;
-
-  if exists (
-    select 1
-    from information_schema.columns
-    where table_schema = 'public'
-      and table_name = 'product_variants'
-      and column_name = 'min_stock_qty'
-  ) then
-    execute '
-      update public.product_variants
-      set min_stock = case
-        when coalesce(min_stock, 0) = 0 then coalesce(min_stock_qty, 0)
-        else min_stock
-      end
-    ';
-  end if;
-end $$;
 
 update public.product_variants
 set
@@ -261,13 +222,12 @@ set
   barcode = nullif(barcode::text, ''),
   size = coalesce(nullif(size::text, ''), 'OS'),
   color = coalesce(nullif(color::text, ''), 'Default'),
-  selling_price = coalesce(selling_price, 0),
   cost_price = coalesce(cost_price, 0),
+  sale_price = coalesce(sale_price, 0),
   stock_qty = coalesce(stock_qty, 0),
-  min_stock = coalesce(min_stock, 0),
+  min_stock_qty = coalesce(min_stock_qty, 0),
   status = coalesce(nullif(status::text, ''), 'active'),
-  created_at = coalesce(created_at, timezone('utc', now())),
-  updated_at = coalesce(updated_at, created_at, timezone('utc', now()));
+  created_at = coalesce(created_at, timezone('utc', now()));
 
 do $$
 declare
@@ -335,20 +295,18 @@ alter table public.product_variants alter column size set not null;
 alter table public.product_variants alter column size set default '';
 alter table public.product_variants alter column color set not null;
 alter table public.product_variants alter column color set default '';
-alter table public.product_variants alter column selling_price set not null;
-alter table public.product_variants alter column selling_price set default 0;
 alter table public.product_variants alter column cost_price set not null;
 alter table public.product_variants alter column cost_price set default 0;
+alter table public.product_variants alter column sale_price set not null;
+alter table public.product_variants alter column sale_price set default 0;
 alter table public.product_variants alter column stock_qty set not null;
 alter table public.product_variants alter column stock_qty set default 0;
-alter table public.product_variants alter column min_stock set not null;
-alter table public.product_variants alter column min_stock set default 0;
+alter table public.product_variants alter column min_stock_qty set not null;
+alter table public.product_variants alter column min_stock_qty set default 0;
 alter table public.product_variants alter column status set not null;
 alter table public.product_variants alter column status set default 'active';
 alter table public.product_variants alter column created_at set not null;
 alter table public.product_variants alter column created_at set default timezone('utc', now());
-alter table public.product_variants alter column updated_at set not null;
-alter table public.product_variants alter column updated_at set default timezone('utc', now());
 
 alter table public.product_variants drop constraint if exists product_variants_product_id_fkey;
 alter table public.product_variants
@@ -371,8 +329,8 @@ create index if not exists product_variants_product_id_idx on public.product_var
 create index if not exists product_variants_barcode_idx on public.product_variants(barcode);
 create index if not exists product_variants_status_idx on public.product_variants(status);
 
-alter table public.product_variants drop column if exists sale_price;
-alter table public.product_variants drop column if exists min_stock_qty;
+alter table public.product_variants drop column if exists image_url;
+alter table public.product_variants drop column if exists updated_at;
 
 commit;
 

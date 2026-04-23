@@ -53,17 +53,15 @@ interface ProductRow {
 interface ProductVariantRow {
   id: string;
   created_at: string;
-  updated_at: string;
   product_id: string;
   sku: string;
   barcode: string | null;
   size: string;
   color: string;
-  selling_price: number;
   cost_price: number;
+  sale_price: number;
   stock_qty: number;
-  min_stock: number;
-  image_url: string | null;
+  min_stock_qty: number;
   status: ProductVariant['status'];
 }
 
@@ -175,17 +173,15 @@ const PRODUCT_COLUMNS = [
 const PRODUCT_VARIANT_COLUMNS = [
   'id',
   'created_at',
-  'updated_at',
   'product_id',
   'sku',
   'barcode',
   'size',
   'color',
-  'selling_price',
   'cost_price',
+  'sale_price',
   'stock_qty',
-  'min_stock',
-  'image_url',
+  'min_stock_qty',
   'status',
 ].join(',');
 
@@ -317,17 +313,17 @@ function mapVariantRowToModel(row: ProductVariantRow): ProductVariant {
   return {
     id: row.id,
     createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    updatedAt: row.created_at,
     productId: row.product_id,
     sku: row.sku,
     barcode: row.barcode ?? '',
     size: row.size,
     color: row.color,
-    sellingPrice: Number(row.selling_price) || 0,
     costPrice: Number(row.cost_price) || 0,
+    sellingPrice: Number(row.sale_price) || 0,
     stockQty: Number(row.stock_qty) || 0,
-    minStock: Number(row.min_stock) || 0,
-    imageUrl: row.image_url ?? '',
+    minStock: Number(row.min_stock_qty) || 0,
+    imageUrl: '',
     status: row.status,
   };
 }
@@ -336,17 +332,15 @@ function mapVariantToRow(variant: ProductVariant): ProductVariantRow {
   return {
     id: variant.id,
     created_at: variant.createdAt,
-    updated_at: variant.updatedAt,
     product_id: variant.productId,
     sku: variant.sku,
     barcode: variant.barcode?.trim() || null,
     size: variant.size,
     color: variant.color,
-    selling_price: Number(variant.sellingPrice) || 0,
     cost_price: Number(variant.costPrice) || 0,
+    sale_price: Number(variant.sellingPrice) || 0,
     stock_qty: Number(variant.stockQty) || 0,
-    min_stock: Number(variant.minStock) || 0,
-    image_url: variant.imageUrl?.trim() || null,
+    min_stock_qty: Number(variant.minStock) || 0,
     status: variant.status,
   };
 }

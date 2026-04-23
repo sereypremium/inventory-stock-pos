@@ -36,7 +36,6 @@ create table if not exists public.products (
 create table if not exists public.product_variants (
   id text primary key,
   created_at timestamptz not null default timezone('utc', now()),
-  updated_at timestamptz not null default timezone('utc', now()),
   -- Legacy deployments may still use bigint primary keys, so cross-table FKs are
   -- enforced in the app/service layer instead of this upgrade-safe migration.
   product_id text not null,
@@ -44,10 +43,10 @@ create table if not exists public.product_variants (
   barcode text,
   size text not null,
   color text not null,
-  selling_price numeric(12, 2) not null default 0,
   cost_price numeric(12, 2) not null default 0,
+  sale_price numeric(12, 2) not null default 0,
   stock_qty integer not null default 0,
-  min_stock integer not null default 0,
+  min_stock_qty integer not null default 0,
   status text not null default 'active' check (status in ('active', 'inactive')),
   constraint product_variants_product_size_color_unique unique (product_id, size, color)
 );
@@ -183,16 +182,15 @@ alter table if exists public.products add column if not exists description text 
 alter table if exists public.products add column if not exists status text not null default 'active';
 
 alter table if exists public.product_variants add column if not exists created_at timestamptz not null default timezone('utc', now());
-alter table if exists public.product_variants add column if not exists updated_at timestamptz not null default timezone('utc', now());
 alter table if exists public.product_variants add column if not exists product_id text;
 alter table if exists public.product_variants add column if not exists sku text not null default '';
 alter table if exists public.product_variants add column if not exists barcode text;
 alter table if exists public.product_variants add column if not exists size text not null default '';
 alter table if exists public.product_variants add column if not exists color text not null default '';
-alter table if exists public.product_variants add column if not exists selling_price numeric(12, 2) not null default 0;
 alter table if exists public.product_variants add column if not exists cost_price numeric(12, 2) not null default 0;
+alter table if exists public.product_variants add column if not exists sale_price numeric(12, 2) not null default 0;
 alter table if exists public.product_variants add column if not exists stock_qty integer not null default 0;
-alter table if exists public.product_variants add column if not exists min_stock integer not null default 0;
+alter table if exists public.product_variants add column if not exists min_stock_qty integer not null default 0;
 alter table if exists public.product_variants add column if not exists status text not null default 'active';
 
 alter table if exists public.suppliers add column if not exists created_at timestamptz not null default timezone('utc', now());
@@ -489,37 +487,6 @@ begin
   if exists (
     select 1
     from information_schema.columns
-    where table_schema = 'public' and table_name = 'product_variants' and column_name = 'sale_price'
-  ) then
-    execute '
-      update public.product_variants
-      set selling_price = case
-        when coalesce(selling_price, 0) = 0 then coalesce(sale_price, 0)
-        else selling_price
-      end
-    ';
-  end if;
-
-  if exists (
-    select 1
-    from information_schema.columns
-    where table_schema = 'public' and table_name = 'product_variants' and column_name = 'min_stock_qty'
-  ) then
-    execute '
-      update public.product_variants
-      set min_stock = case
-        when coalesce(min_stock, 0) = 0 then coalesce(min_stock_qty, 0)
-        else min_stock
-      end
-    ';
-  end if;
-end $$;
-
-do $$
-begin
-  if exists (
-    select 1
-    from information_schema.columns
     where table_schema = 'public' and table_name = 'sale_headers' and column_name = 'sale_no'
   ) then
     execute '
@@ -703,7 +670,7 @@ begin
   update public.products p
   set base_price = coalesce(price_map.min_price, p.base_price)
   from (
-    select product_id::text as product_id, min(selling_price) as min_price
+    select product_id::text as product_id, min(sale_price) as min_price
     from public.product_variants
     group by product_id::text
   ) price_map
@@ -720,7 +687,7 @@ begin
     size = coalesce(nullif(si.size::text, ''), pv.size::text),
     color = coalesce(nullif(si.color::text, ''), pv.color::text),
     unit_cost = coalesce(nullif(si.unit_cost, 0), pv.cost_price, 0),
-    unit_price = coalesce(nullif(si.unit_price, 0), pv.selling_price, 0),
+    unit_price = coalesce(nullif(si.unit_price, 0), pv.sale_price, 0),
     line_cost = case
       when coalesce(si.line_cost, 0) = 0 then coalesce(si.quantity, 0) * coalesce(nullif(si.unit_cost, 0), pv.cost_price, 0)
       else si.line_cost
