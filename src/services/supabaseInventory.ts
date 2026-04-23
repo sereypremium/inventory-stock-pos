@@ -52,11 +52,10 @@ interface ProductRow {
 
 interface ProductVariantRow {
   id: string;
-  created_at: string;
   product_id: string;
   sku: string;
   barcode: string | null;
-  size: string;
+  size: number;
   color: string;
   cost_price: number;
   sale_price: number;
@@ -162,6 +161,16 @@ interface SupabaseQueryError {
   message?: string;
 }
 
+export class SupabaseInventoryError extends Error {
+  code?: string;
+
+  constructor(message: string, code?: string) {
+    super(message);
+    this.name = 'SupabaseInventoryError';
+    this.code = code;
+  }
+}
+
 const PRODUCT_COLUMNS = [
   'id',
   'created_at',
@@ -179,7 +188,6 @@ const PRODUCT_COLUMNS = [
 
 const PRODUCT_VARIANT_COLUMNS = [
   'id',
-  'created_at',
   'product_id',
   'sku',
   'barcode',
@@ -242,7 +250,17 @@ function buildSupabaseReadErrorMessage(label: string, error: SupabaseQueryError)
 }
 
 function throwSupabaseReadError(label: string, error: SupabaseQueryError): never {
-  throw new Error(buildSupabaseReadErrorMessage(label, error));
+  throw new SupabaseInventoryError(buildSupabaseReadErrorMessage(label, error), error.code);
+}
+
+function coerceVariantSize(size: string) {
+  const nextSize = Number(size);
+
+  if (!Number.isInteger(nextSize)) {
+    throw new Error('Variant size must be a whole number to match the Supabase product_variants.size column.');
+  }
+
+  return nextSize;
 }
 
 function mapBrandRowToModel(row: BrandRow): Brand {
@@ -328,14 +346,16 @@ function mapProductToRow(product: Product): ProductRow {
 }
 
 function mapVariantRowToModel(row: ProductVariantRow): ProductVariant {
+  const timestamp = new Date().toISOString();
+
   return {
     id: row.id,
-    createdAt: row.created_at,
-    updatedAt: row.created_at,
+    createdAt: timestamp,
+    updatedAt: timestamp,
     productId: row.product_id,
     sku: row.sku,
     barcode: row.barcode ?? '',
-    size: row.size,
+    size: String(row.size),
     color: row.color,
     costPrice: Number(row.cost_price) || 0,
     sellingPrice: Number(row.sale_price) || 0,
@@ -349,11 +369,10 @@ function mapVariantRowToModel(row: ProductVariantRow): ProductVariant {
 function mapVariantToRow(variant: ProductVariant): ProductVariantRow {
   return {
     id: variant.id,
-    created_at: variant.createdAt,
     product_id: variant.productId,
     sku: variant.sku,
     barcode: variant.barcode?.trim() || null,
-    size: variant.size,
+    size: coerceVariantSize(variant.size),
     color: variant.color,
     cost_price: Number(variant.costPrice) || 0,
     sale_price: Number(variant.sellingPrice) || 0,
@@ -589,7 +608,7 @@ export async function fetchSupabaseInventorySlices(): Promise<
     client.from('brands').select('*').order('created_at', { ascending: false }),
     client.from('categories').select('*').order('created_at', { ascending: false }),
     client.from('products').select(PRODUCT_COLUMNS).order('created_at', { ascending: false }),
-    client.from('product_variants').select(PRODUCT_VARIANT_COLUMNS).order('created_at', { ascending: false }),
+    client.from('product_variants').select(PRODUCT_VARIANT_COLUMNS).order('sku', { ascending: true }),
     client.from('suppliers').select('*').order('created_at', { ascending: false }),
     client.from('purchase_headers').select('*').order('received_date', { ascending: false }),
     client.from('purchase_items').select('*').order('created_at', { ascending: true }),

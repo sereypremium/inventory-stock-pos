@@ -20,6 +20,7 @@ import {
   saveSupabaseProduct,
   saveSupabaseSupplier,
   saveSupabaseVariant,
+  SupabaseInventoryError,
 } from '../services/supabaseInventory';
 import type {
   Brand,
@@ -202,14 +203,7 @@ function classifyInventorySyncError(error: unknown): InventorySyncError {
   const message = formatError(error);
   const lowerMessage = message.toLowerCase();
 
-  if (
-    lowerMessage.includes('permission denied') ||
-    lowerMessage.includes('row-level security') ||
-    lowerMessage.includes('rls') ||
-    lowerMessage.includes('42501') ||
-    lowerMessage.includes('403') ||
-    lowerMessage.includes('401')
-  ) {
+  if (error instanceof SupabaseInventoryError && error.code === '42501') {
     return { kind: 'permission', message };
   }
 
