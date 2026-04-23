@@ -39,7 +39,7 @@ export function AppShell() {
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('lg'));
   const { authError, session, logout } = useAuth();
-  const { isDatabaseConnected, isSyncing } = useInventory();
+  const { inventorySyncError, isDatabaseConnected, isSyncing } = useInventory();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const visibleNavigation = navigationItems.filter(
@@ -214,10 +214,23 @@ export function AppShell() {
           </Alert>
         )}
         {!isDatabaseConnected && !isSyncing && (
-          <Alert severity={isSupabaseConfigured ? 'warning' : 'info'} sx={{ mb: 2 }}>
-            {isSupabaseConfigured
-              ? 'Supabase is configured but live inventory data could not sync under the current session and RLS policies.'
-              : 'Supabase env vars are missing in this app runtime. The current screen is using mock/browser data, so it will not match empty tables in Supabase until VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are provided.'}
+          <Alert
+            severity={
+              !isSupabaseConfigured
+                ? 'info'
+                : inventorySyncError?.kind === 'permission'
+                  ? 'warning'
+                  : 'error'
+            }
+            sx={{ mb: 2 }}
+          >
+            {!isSupabaseConfigured
+              ? 'Supabase env vars are missing in this app runtime. The current screen is using mock/browser data, so it will not match empty tables in Supabase until VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are provided.'
+              : inventorySyncError?.kind === 'permission'
+                ? 'Supabase is configured but live inventory data could not sync under the current session and RLS policies.'
+                : inventorySyncError
+                  ? `Supabase inventory sync failed: ${inventorySyncError.message}`
+                  : 'Supabase inventory sync did not complete. Check the browser console for details.'}
           </Alert>
         )}
         <Outlet />

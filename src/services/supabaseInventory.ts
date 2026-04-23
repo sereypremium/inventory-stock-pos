@@ -155,6 +155,13 @@ interface RemoteEntityResult<T> extends OperationResult {
   record?: T;
 }
 
+interface SupabaseQueryError {
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
+  message?: string;
+}
+
 const PRODUCT_COLUMNS = [
   'id',
   'created_at',
@@ -225,6 +232,17 @@ function buildRemoteSuccess(message: string, recordId?: string): OperationResult
     message,
     recordId,
   };
+}
+
+function buildSupabaseReadErrorMessage(label: string, error: SupabaseQueryError) {
+  const details = [error.message, error.details, error.hint].filter(Boolean).join(' ');
+  const code = error.code ? ` [${error.code}]` : '';
+
+  return `${label} could not be loaded from Supabase${code}: ${details || 'Unknown query error.'}`;
+}
+
+function throwSupabaseReadError(label: string, error: SupabaseQueryError): never {
+  throw new Error(buildSupabaseReadErrorMessage(label, error));
 }
 
 function mapBrandRowToModel(row: BrandRow): Brand {
@@ -580,39 +598,39 @@ export async function fetchSupabaseInventorySlices(): Promise<
   ]);
 
   if (brandsResult.error) {
-    throw new Error(brandsResult.error.message);
+    throwSupabaseReadError('Brands', brandsResult.error);
   }
 
   if (categoriesResult.error) {
-    throw new Error(categoriesResult.error.message);
+    throwSupabaseReadError('Categories', categoriesResult.error);
   }
 
   if (productsResult.error) {
-    throw new Error(productsResult.error.message);
+    throwSupabaseReadError('Products', productsResult.error);
   }
 
   if (variantsResult.error) {
-    throw new Error(variantsResult.error.message);
+    throwSupabaseReadError('Product variants', variantsResult.error);
   }
 
   if (suppliersResult.error) {
-    throw new Error(suppliersResult.error.message);
+    throwSupabaseReadError('Suppliers', suppliersResult.error);
   }
 
   if (purchaseHeadersResult.error) {
-    throw new Error(purchaseHeadersResult.error.message);
+    throwSupabaseReadError('Purchase headers', purchaseHeadersResult.error);
   }
 
   if (purchaseItemsResult.error) {
-    throw new Error(purchaseItemsResult.error.message);
+    throwSupabaseReadError('Purchase items', purchaseItemsResult.error);
   }
 
   if (saleHeadersResult.error) {
-    throw new Error(saleHeadersResult.error.message);
+    throwSupabaseReadError('Sale headers', saleHeadersResult.error);
   }
 
   if (saleItemsResult.error) {
-    throw new Error(saleItemsResult.error.message);
+    throwSupabaseReadError('Sale items', saleItemsResult.error);
   }
 
   const salesItemsBySaleId = new Map<string, SaleItemRow[]>();

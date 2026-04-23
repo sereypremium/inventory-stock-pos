@@ -42,6 +42,7 @@ interface InventoryContextValue extends InventoryState {
   dataSource: 'mock' | 'supabase';
   isDatabaseConnected: boolean;
   isSyncing: boolean;
+  inventorySyncError: InventorySyncError | null;
   addBrand: (input: BrandInput) => Promise<OperationResult>;
   updateBrand: (brandId: string, input: BrandInput) => Promise<OperationResult>;
   deleteBrand: (brandId: string) => Promise<OperationResult>;
@@ -59,6 +60,13 @@ interface InventoryContextValue extends InventoryState {
   deleteSupplier: (supplierId: string) => Promise<OperationResult>;
   createStockIn: (input: StockInInput) => Promise<OperationResult>;
   createSale: (input: SaleInput) => Promise<OperationResult>;
+}
+
+type InventorySyncErrorKind = 'permission' | 'query' | 'schema' | 'unknown';
+
+interface InventorySyncError {
+  kind: InventorySyncErrorKind;
+  message: string;
 }
 
 const STORAGE_KEY = 'bootroom-pos.inventory-state';
@@ -186,6 +194,52 @@ function buildFailure(message: string): OperationResult {
   return { ok: false, message };
 }
 
+function formatError(error: unknown) {
+  return error instanceof Error ? error.message : 'Unknown inventory sync error.';
+}
+
+function classifyInventorySyncError(error: unknown): InventorySyncError {
+  const message = formatError(error);
+  const lowerMessage = message.toLowerCase();
+
+  if (
+    lowerMessage.includes('permission denied') ||
+    lowerMessage.includes('row-level security') ||
+    lowerMessage.includes('rls') ||
+    lowerMessage.includes('42501') ||
+    lowerMessage.includes('403') ||
+    lowerMessage.includes('401')
+  ) {
+    return { kind: 'permission', message };
+  }
+
+  if (
+    lowerMessage.includes('schema cache') ||
+    lowerMessage.includes('column') ||
+    lowerMessage.includes('relation') ||
+    lowerMessage.includes('table') ||
+    lowerMessage.includes('does not exist') ||
+    lowerMessage.includes('42703') ||
+    lowerMessage.includes('42p01') ||
+    lowerMessage.includes('pgrst204')
+  ) {
+    return { kind: 'schema', message };
+  }
+
+  if (
+    lowerMessage.includes('parse') ||
+    lowerMessage.includes('order') ||
+    lowerMessage.includes('syntax') ||
+    lowerMessage.includes('bad request') ||
+    lowerMessage.includes('pgrst100') ||
+    lowerMessage.includes('400')
+  ) {
+    return { kind: 'query', message };
+  }
+
+  return { kind: 'unknown', message };
+}
+
 export function InventoryProvider({ children }: { children: ReactNode }) {
   const { authStatus, session } = useAuth();
   const [state, setState] = useState<InventoryState>(() => getInitialState());
@@ -194,6 +248,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
   );
   const [isDatabaseConnected, setIsDatabaseConnected] = useState(false);
   const [isSyncing, setIsSyncing] = useState(isSupabaseConfigured);
+  const [inventorySyncError, setInventorySyncError] = useState<InventorySyncError | null>(null);
 
   const commitState = (updater: (current: InventoryState) => InventoryState) => {
     setState((current) => {
@@ -208,6 +263,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       setDataSource('mock');
       setIsDatabaseConnected(false);
       setIsSyncing(false);
+      setInventorySyncError(null);
       return;
     }
 
@@ -216,6 +272,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     if (authStatus === 'loading') {
       setIsDatabaseConnected(false);
       setIsSyncing(true);
+      setInventorySyncError(null);
       return;
     }
 
@@ -223,12 +280,14 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       commitState((current) => createSupabaseBootState(current));
       setIsDatabaseConnected(false);
       setIsSyncing(false);
+      setInventorySyncError(null);
       return;
     }
 
     let active = true;
 
     setIsSyncing(true);
+    setInventorySyncError(null);
 
     void fetchSupabaseInventorySlices()
       .then((remoteSlices) => {
@@ -249,14 +308,22 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
           }),
         );
         setIsDatabaseConnected(true);
+        setInventorySyncError(null);
       })
-      .catch(() => {
+      .catch((error) => {
         if (!active) {
           return;
         }
 
+        const syncError = classifyInventorySyncError(error);
+        console.error('Supabase inventory sync failed.', {
+          kind: syncError.kind,
+          message: syncError.message,
+          error,
+        });
         commitState((current) => createSupabaseBootState(current));
         setIsDatabaseConnected(false);
+        setInventorySyncError(syncError);
       })
       .finally(() => {
         if (!active) {
@@ -276,6 +343,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     dataSource,
     isDatabaseConnected,
     isSyncing,
+    inventorySyncError,
     addBrand: async (input) => {
       const exists = state.brands.some(
         (brand) => brand.code.toLowerCase() === input.code.trim().toLowerCase(),

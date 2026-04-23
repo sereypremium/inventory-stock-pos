@@ -15,7 +15,15 @@ import { buildDashboardAnalytics } from './dashboardUtils';
 
 export function DashboardPage() {
   const { session, settings } = useAuth();
-  const { brands, products, variants, sales, isDatabaseConnected, isSyncing } = useInventory();
+  const {
+    brands,
+    inventorySyncError,
+    isDatabaseConnected,
+    isSyncing,
+    products,
+    sales,
+    variants,
+  } = useInventory();
   const analytics = useMemo(
     () =>
       buildDashboardAnalytics({
@@ -58,10 +66,22 @@ export function DashboardPage() {
       />
 
       {!isDatabaseConnected && !isSyncing && (
-        <Alert severity="info">
-          {isSupabaseConfigured
-            ? 'The dashboard could not sync live data from Supabase, so live metrics are currently unavailable.'
-            : 'The dashboard is currently running from local mock and browser-stored data because Supabase env vars are not configured.'}
+        <Alert
+          severity={
+            !isSupabaseConfigured
+              ? 'info'
+              : inventorySyncError?.kind === 'permission'
+                ? 'warning'
+                : 'error'
+          }
+        >
+          {!isSupabaseConfigured
+            ? 'The dashboard is currently running from local mock and browser-stored data because Supabase env vars are not configured.'
+            : inventorySyncError?.kind === 'permission'
+              ? 'The dashboard could not sync live data because the current session is blocked by Supabase permissions or RLS policies.'
+              : inventorySyncError
+                ? `The dashboard could not sync live data because Supabase returned: ${inventorySyncError.message}`
+                : 'The dashboard could not sync live data from Supabase, so live metrics are currently unavailable.'}
         </Alert>
       )}
 
