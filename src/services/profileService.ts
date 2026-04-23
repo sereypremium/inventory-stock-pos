@@ -20,6 +20,8 @@ interface RemoteEntityResult<T> extends OperationResult {
   record?: T;
 }
 
+const PROFILE_COLUMNS = 'id, created_at, updated_at, email, full_name, app_role, status';
+
 function getClient() {
   if (!supabase) {
     throw new Error('Supabase is not configured.');
@@ -60,15 +62,39 @@ function mapProfileInputToRow(input: UserProfileInput) {
   };
 }
 
-export async function fetchCurrentProfile(userId: string): Promise<UserProfile | null> {
+export async function fetchCurrentProfile(): Promise<UserProfile | null> {
   const client = getClient();
+
+  const { data: authData, error: authError } = await client.auth.getUser();
+
+  if (authError || !authData.user) {
+    console.error('Could not get the current Supabase Auth user for profile lookup.', {
+      message: authError?.message,
+      status: authError?.status,
+    });
+    throw new Error(authError?.message || 'No authenticated Supabase user was returned.');
+  }
+
+  const userId = authData.user.id;
   const { data, error } = await client
     .from('profiles')
-    .select('id, created_at, updated_at, email, full_name, app_role, status')
+    .select(PROFILE_COLUMNS)
     .eq('id', userId)
-    .maybeSingle();
+    .single();
 
   if (error) {
+    console.error('Could not load the current profile from public.profiles.', {
+      userId,
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+
+    if (error.code === 'PGRST116') {
+      return null;
+    }
+
     throw new Error(error.message);
   }
 
@@ -79,7 +105,7 @@ export async function fetchProfiles(): Promise<UserProfile[]> {
   const client = getClient();
   const { data, error } = await client
     .from('profiles')
-    .select('id, created_at, updated_at, email, full_name, app_role, status')
+    .select(PROFILE_COLUMNS)
     .order('full_name', { ascending: true });
 
   if (error) {
@@ -99,7 +125,7 @@ export async function saveProfile(
       .from('profiles')
       .update(mapProfileInputToRow(input))
       .eq('id', profileId)
-      .select('id, created_at, updated_at, email, full_name, app_role, status')
+      .select(PROFILE_COLUMNS)
       .single();
 
     if (error) {

@@ -162,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthError(null);
 
     try {
-      const nextProfile = await fetchCurrentProfile(nextAuthSession.user.id);
+      const nextProfile = await fetchCurrentProfile();
 
       if (!nextProfile) {
         const message =
