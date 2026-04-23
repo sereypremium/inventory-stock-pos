@@ -40,12 +40,12 @@ interface ProductRow {
   created_at: string;
   updated_at: string;
   created_by?: string | null;
-  name: string;
-  style_code: string;
+  product_code: string;
+  model_name: string;
   image_url: string | null;
   brand_id: string;
   category_id: string;
-  target_group: Product['targetGroup'];
+  gender: Product['targetGroup'];
   base_price: number;
   description: string;
   status: Product['status'];
@@ -253,12 +253,12 @@ function mapProductRowToModel(row: ProductRow): Product {
     id: row.id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    name: row.name,
-    styleCode: row.style_code,
+    name: row.model_name,
+    styleCode: row.product_code,
     imageUrl: row.image_url ?? '',
     brandId: row.brand_id,
     categoryId: row.category_id,
-    targetGroup: row.target_group,
+    targetGroup: row.gender,
     basePrice: Number(row.base_price) || 0,
     description: row.description ?? '',
     status: row.status,
@@ -270,12 +270,12 @@ function mapProductToRow(product: Product): ProductRow {
     id: product.id,
     created_at: product.createdAt,
     updated_at: product.updatedAt,
-    name: product.name,
-    style_code: product.styleCode,
+    product_code: product.styleCode,
+    model_name: product.name,
     image_url: product.imageUrl?.trim() || null,
     brand_id: product.brandId,
     category_id: product.categoryId,
-    target_group: product.targetGroup,
+    gender: product.targetGroup,
     base_price: Number(product.basePrice) || 0,
     description: product.description ?? '',
     status: product.status,
