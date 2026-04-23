@@ -51,6 +51,7 @@ const defaultVariantForm: ProductVariantInput = {
   costPrice: 0,
   stockQty: 0,
   minStock: 0,
+  imageUrl: '',
   status: 'active',
 };
 
@@ -356,6 +357,7 @@ function VariantDialog({
             costPrice: initialValue.costPrice,
             stockQty: initialValue.stockQty,
             minStock: initialValue.minStock,
+            imageUrl: initialValue.imageUrl ?? '',
             status: initialValue.status,
           }
         : {
@@ -411,6 +413,13 @@ function VariantDialog({
                 setForm((current) => ({ ...current, barcode: event.target.value }))
               }
               value={form.barcode ?? ''}
+            />
+            <TextField
+              label="Image URL"
+              onChange={(event) =>
+                setForm((current) => ({ ...current, imageUrl: event.target.value }))
+              }
+              value={form.imageUrl ?? ''}
             />
             <TextField
               label="Size"

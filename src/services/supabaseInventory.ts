@@ -39,13 +39,12 @@ interface ProductRow {
   id: string;
   created_at: string;
   updated_at: string;
-  created_by?: string | null;
-  product_code: string;
-  model_name: string;
+  product_name: string;
+  style_code: string;
   image_url: string | null;
   brand_id: string;
   category_id: string;
-  gender: Product['targetGroup'];
+  target_group: Product['targetGroup'];
   base_price: number;
   description: string;
   status: Product['status'];
@@ -55,7 +54,6 @@ interface ProductVariantRow {
   id: string;
   created_at: string;
   updated_at: string;
-  created_by?: string | null;
   product_id: string;
   sku: string;
   barcode: string | null;
@@ -65,6 +63,7 @@ interface ProductVariantRow {
   cost_price: number;
   stock_qty: number;
   min_stock: number;
+  image_url: string | null;
   status: ProductVariant['status'];
 }
 
@@ -157,6 +156,38 @@ interface SaleItemRow {
 interface RemoteEntityResult<T> extends OperationResult {
   record?: T;
 }
+
+const PRODUCT_COLUMNS = [
+  'id',
+  'created_at',
+  'updated_at',
+  'product_name',
+  'style_code',
+  'brand_id',
+  'category_id',
+  'target_group',
+  'base_price',
+  'image_url',
+  'description',
+  'status',
+].join(',');
+
+const PRODUCT_VARIANT_COLUMNS = [
+  'id',
+  'created_at',
+  'updated_at',
+  'product_id',
+  'sku',
+  'barcode',
+  'size',
+  'color',
+  'selling_price',
+  'cost_price',
+  'stock_qty',
+  'min_stock',
+  'image_url',
+  'status',
+].join(',');
 
 function normalizePaymentMethod(value: string | null | undefined): SaleRecord['paymentMethod'] {
   if (value === 'card' || value === 'transfer') {
@@ -253,12 +284,12 @@ function mapProductRowToModel(row: ProductRow): Product {
     id: row.id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    name: row.model_name,
-    styleCode: row.product_code,
+    name: row.product_name,
+    styleCode: row.style_code,
     imageUrl: row.image_url ?? '',
     brandId: row.brand_id,
     categoryId: row.category_id,
-    targetGroup: row.gender,
+    targetGroup: row.target_group,
     basePrice: Number(row.base_price) || 0,
     description: row.description ?? '',
     status: row.status,
@@ -270,12 +301,12 @@ function mapProductToRow(product: Product): ProductRow {
     id: product.id,
     created_at: product.createdAt,
     updated_at: product.updatedAt,
-    product_code: product.styleCode,
-    model_name: product.name,
+    product_name: product.name,
+    style_code: product.styleCode,
     image_url: product.imageUrl?.trim() || null,
     brand_id: product.brandId,
     category_id: product.categoryId,
-    gender: product.targetGroup,
+    target_group: product.targetGroup,
     base_price: Number(product.basePrice) || 0,
     description: product.description ?? '',
     status: product.status,
@@ -296,6 +327,7 @@ function mapVariantRowToModel(row: ProductVariantRow): ProductVariant {
     costPrice: Number(row.cost_price) || 0,
     stockQty: Number(row.stock_qty) || 0,
     minStock: Number(row.min_stock) || 0,
+    imageUrl: row.image_url ?? '',
     status: row.status,
   };
 }
@@ -314,6 +346,7 @@ function mapVariantToRow(variant: ProductVariant): ProductVariantRow {
     cost_price: Number(variant.costPrice) || 0,
     stock_qty: Number(variant.stockQty) || 0,
     min_stock: Number(variant.minStock) || 0,
+    image_url: variant.imageUrl?.trim() || null,
     status: variant.status,
   };
 }
@@ -543,8 +576,8 @@ export async function fetchSupabaseInventorySlices(): Promise<
   ] = await Promise.all([
     client.from('brands').select('*').order('created_at', { ascending: false }),
     client.from('categories').select('*').order('created_at', { ascending: false }),
-    client.from('products').select('*').order('created_at', { ascending: false }),
-    client.from('product_variants').select('*').order('created_at', { ascending: false }),
+    client.from('products').select(PRODUCT_COLUMNS).order('created_at', { ascending: false }),
+    client.from('product_variants').select(PRODUCT_VARIANT_COLUMNS).order('created_at', { ascending: false }),
     client.from('suppliers').select('*').order('created_at', { ascending: false }),
     client.from('purchase_headers').select('*').order('received_date', { ascending: false }),
     client.from('purchase_items').select('*').order('created_at', { ascending: true }),
@@ -606,8 +639,10 @@ export async function fetchSupabaseInventorySlices(): Promise<
   return {
     brands: ((brandsResult.data ?? []) as BrandRow[]).map(mapBrandRowToModel),
     categories: ((categoriesResult.data ?? []) as CategoryRow[]).map(mapCategoryRowToModel),
-    products: ((productsResult.data ?? []) as ProductRow[]).map(mapProductRowToModel),
-    variants: ((variantsResult.data ?? []) as ProductVariantRow[]).map(mapVariantRowToModel),
+    products: ((productsResult.data ?? []) as unknown as ProductRow[]).map(mapProductRowToModel),
+    variants: ((variantsResult.data ?? []) as unknown as ProductVariantRow[]).map(
+      mapVariantRowToModel,
+    ),
     suppliers: ((suppliersResult.data ?? []) as SupplierRow[]).map(mapSupplierRowToModel),
     stockIns: ((purchaseHeadersResult.data ?? []) as PurchaseHeaderRow[]).map((row) =>
       mapPurchaseHeaderRowToModel(row, purchaseItemsByPurchaseId.get(row.id) ?? []),
@@ -712,18 +747,20 @@ export async function saveSupabaseProduct(product: Product): Promise<RemoteEntit
     const { data, error } = await client
       .from('products')
       .upsert(mapProductToRow(product))
-      .select()
+      .select(PRODUCT_COLUMNS)
       .single();
 
     if (error) {
       return buildRemoteFailure(`Could not save the product to Supabase: ${error.message}`);
     }
 
+    const savedProduct = data as unknown as ProductRow;
+
     return {
       ok: true,
       message: 'Product saved successfully.',
-      recordId: data.id,
-      record: mapProductRowToModel(data as ProductRow),
+      recordId: savedProduct.id,
+      record: mapProductRowToModel(savedProduct),
     };
   } catch (error) {
     return buildRemoteFailure(
@@ -757,18 +794,20 @@ export async function saveSupabaseVariant(
     const { data, error } = await client
       .from('product_variants')
       .upsert(mapVariantToRow(variant))
-      .select()
+      .select(PRODUCT_VARIANT_COLUMNS)
       .single();
 
     if (error) {
       return buildRemoteFailure(`Could not save the variant to Supabase: ${error.message}`);
     }
 
+    const savedVariant = data as unknown as ProductVariantRow;
+
     return {
       ok: true,
       message: 'Variant saved successfully.',
-      recordId: data.id,
-      record: mapVariantRowToModel(data as ProductVariantRow),
+      recordId: savedVariant.id,
+      record: mapVariantRowToModel(savedVariant),
     };
   } catch (error) {
     return buildRemoteFailure(

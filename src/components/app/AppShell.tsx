@@ -4,7 +4,6 @@ import MenuOutlinedIcon from '@mui/icons-material/MenuOutlined';
 import {
   Alert,
   AppBar,
-  Avatar,
   Box,
   Chip,
   Divider,
@@ -97,57 +96,53 @@ export function AppShell() {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      <AppBar position="fixed">
-        <Toolbar sx={{ gap: 1.5, minHeight: 72 }}>
+      <AppBar
+        elevation={0}
+        position="fixed"
+        sx={{
+          bgcolor: 'background.paper',
+          borderBottom: '1px solid',
+          borderColor: 'divider',
+          color: 'text.primary',
+        }}
+      >
+        <Toolbar
+          sx={{
+            gap: { xs: 1, sm: 1.5 },
+            minHeight: { xs: 64, md: 72 },
+            px: { xs: 2, sm: 3 },
+          }}
+        >
           {!isDesktop && (
-            <IconButton edge="start" onClick={() => setMobileOpen(true)}>
+            <IconButton edge="start" onClick={() => setMobileOpen(true)} sx={{ flexShrink: 0 }}>
               <MenuOutlinedIcon />
             </IconButton>
           )}
-          <Box sx={{ flexGrow: 1 }}>
-            <Typography variant="h6">{activePage}</Typography>
-            <Typography color="text.secondary" variant="body2">
+          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+            <Typography noWrap sx={{ fontWeight: 700, lineHeight: 1.25 }} variant="h6">
+              {activePage}
+            </Typography>
+            <Typography
+              color="text.secondary"
+              noWrap
+              sx={{ display: { xs: 'none', sm: 'block' } }}
+              variant="body2"
+            >
               Soccer shoe shop back office
             </Typography>
           </Box>
           {session && (
-            <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
-              <Chip
-                color={session.role === 'admin' ? 'primary' : 'secondary'}
-                label={session.role === 'admin' ? 'Admin' : 'Cashier'}
-                size="small"
-              />
-              <Chip
-                color={isDatabaseConnected ? 'success' : isSyncing ? 'primary' : 'default'}
-                label={
-                  isDatabaseConnected
-                    ? 'Database connected'
-                    : isSyncing
-                      ? 'Connecting...'
-                      : isSupabaseConfigured
-                        ? 'Supabase unavailable'
-                        : 'Mock mode'
-                }
-                size="small"
-                variant={isDatabaseConnected ? 'filled' : 'outlined'}
-              />
-              <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
-                <Avatar sx={{ bgcolor: 'primary.main', height: 34, width: 34 }}>
-                  {session.name.charAt(0)}
-                </Avatar>
-                <Box sx={{ display: { xs: 'none', md: 'block' } }}>
-                  <Typography sx={{ fontWeight: 600 }} variant="body2">
-                    {session.name}
-                  </Typography>
-                  <Typography color="text.secondary" variant="caption">
-                    {session.email}
-                  </Typography>
-                </Box>
-              </Stack>
+            <Stack direction="row" sx={{ alignItems: 'center', flexShrink: 0 }}>
               <IconButton
+                aria-label="Log out"
                 onClick={() => {
                   void logout();
                   navigate('/login');
+                }}
+                sx={{
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  color: 'text.secondary',
                 }}
               >
                 <LogoutOutlinedIcon />

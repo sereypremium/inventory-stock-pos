@@ -83,6 +83,7 @@ function normalizeInventoryState(value?: Partial<InventoryState> | null): Invent
     ? value.variants.map((variant) => ({
         ...variant,
         barcode: variant.barcode ?? mockVariantsById.get(variant.id)?.barcode ?? '',
+        imageUrl: variant.imageUrl ?? mockVariantsById.get(variant.id)?.imageUrl ?? '',
       }))
     : mockInventoryState.variants;
   const normalizedSales = Array.isArray(value?.sales)
@@ -657,6 +658,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         costPrice: Number(input.costPrice),
         stockQty: Number(input.stockQty),
         minStock: Number(input.minStock),
+        imageUrl: input.imageUrl?.trim() || '',
         status: input.status,
       };
 
@@ -732,6 +734,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
         costPrice: Number(input.costPrice),
         stockQty: Number(input.stockQty),
         minStock: Number(input.minStock),
+        imageUrl: input.imageUrl?.trim() || '',
         status: input.status,
         updatedAt: new Date().toISOString(),
       };

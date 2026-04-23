@@ -45,6 +45,7 @@ export interface ProductVariant extends TimestampedRecord {
   costPrice: number;
   stockQty: number;
   minStock: number;
+  imageUrl?: string;
   status: EntityStatus;
 }
 
