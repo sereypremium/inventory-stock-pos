@@ -39,8 +39,8 @@ interface ProductRow {
   id: string;
   created_at: string;
   updated_at: string;
-  product_name: string;
-  style_code: string;
+  name: string;
+  code: string;
   image_url: string | null;
   brand_id: string;
   category_id: string;
@@ -175,8 +175,8 @@ const PRODUCT_COLUMNS = [
   'id',
   'created_at',
   'updated_at',
-  'product_name',
-  'style_code',
+  'name',
+  'code',
   'brand_id',
   'category_id',
   'target_group',
@@ -245,6 +245,10 @@ function buildRemoteSuccess(message: string, recordId?: string): OperationResult
 function buildSupabaseReadErrorMessage(label: string, error: SupabaseQueryError) {
   const details = [error.message, error.details, error.hint].filter(Boolean).join(' ');
   const code = error.code ? ` [${error.code}]` : '';
+
+  if (error.code === '42703') {
+    return `Schema mismatch: ${label} query references a column that does not exist${code}. ${details || 'Check the frontend selected columns against the real Supabase table schema.'}`;
+  }
 
   return `${label} could not be loaded from Supabase${code}: ${details || 'Unknown query error.'}`;
 }
@@ -316,8 +320,8 @@ function mapProductRowToModel(row: ProductRow): Product {
     id: row.id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    name: row.product_name,
-    styleCode: row.style_code,
+    name: row.name,
+    styleCode: row.code,
     imageUrl: row.image_url ?? '',
     brandId: row.brand_id,
     categoryId: row.category_id,
@@ -333,8 +337,8 @@ function mapProductToRow(product: Product): ProductRow {
     id: product.id,
     created_at: product.createdAt,
     updated_at: product.updatedAt,
-    product_name: product.name,
-    style_code: product.styleCode,
+    name: product.name,
+    code: product.styleCode,
     image_url: product.imageUrl?.trim() || null,
     brand_id: product.brandId,
     category_id: product.categoryId,

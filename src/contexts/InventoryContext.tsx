@@ -207,6 +207,10 @@ function classifyInventorySyncError(error: unknown): InventorySyncError {
     return { kind: 'permission', message };
   }
 
+  if (error instanceof SupabaseInventoryError && error.code === '42703') {
+    return { kind: 'schema', message };
+  }
+
   if (
     lowerMessage.includes('schema cache') ||
     lowerMessage.includes('column') ||
