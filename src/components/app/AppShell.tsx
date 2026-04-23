@@ -39,7 +39,7 @@ export function AppShell() {
   const navigate = useNavigate();
   const theme = useTheme();
   const isDesktop = useMediaQuery(theme.breakpoints.up('lg'));
-  const { session, logout } = useAuth();
+  const { authError, session, logout } = useAuth();
   const { isDatabaseConnected, isSyncing } = useInventory();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -146,7 +146,7 @@ export function AppShell() {
               </Stack>
               <IconButton
                 onClick={() => {
-                  logout();
+                  void logout();
                   navigate('/login');
                 }}
               >
@@ -213,10 +213,15 @@ export function AppShell() {
           py: { xs: 11, md: 12 },
         }}
       >
+        {authError && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {authError}
+          </Alert>
+        )}
         {!isDatabaseConnected && !isSyncing && (
           <Alert severity={isSupabaseConfigured ? 'warning' : 'info'} sx={{ mb: 2 }}>
             {isSupabaseConfigured
-              ? 'Supabase is configured but the app could not sync live data. The current screen may still reflect local browser data instead of the database.'
+              ? 'Supabase is configured but live inventory data could not sync under the current session and RLS policies.'
               : 'Supabase env vars are missing in this app runtime. The current screen is using mock/browser data, so it will not match empty tables in Supabase until VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are provided.'}
           </Alert>
         )}

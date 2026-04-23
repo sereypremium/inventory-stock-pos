@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Box, CircularProgress, Paper, Stack, Typography } from '@mui/material';
 import { Navigate, createBrowserRouter, useLocation } from 'react-router-dom';
 import { AppShell } from '../components/app/AppShell';
 import { useAuth } from '../contexts/AuthContext';
@@ -20,9 +21,39 @@ import { UserManagementPage } from '../features/users/UserManagementPage';
 import { ProductVariantsPage } from '../features/variants/ProductVariantsPage';
 import type { Role } from '../types/models';
 
+function AuthLoadingScreen() {
+  return (
+    <Box
+      sx={{
+        alignItems: 'center',
+        display: 'flex',
+        minHeight: '100vh',
+        p: 2,
+        justifyContent: 'center',
+      }}
+    >
+      <Paper sx={{ maxWidth: 360, p: 3, width: '100%' }}>
+        <Stack spacing={2} sx={{ alignItems: 'center', textAlign: 'center' }}>
+          <CircularProgress size={30} />
+          <Box>
+            <Typography variant="h6">Checking secure session</Typography>
+            <Typography color="text.secondary" sx={{ mt: 0.75 }} variant="body2">
+              Loading your Supabase Auth session and profile.
+            </Typography>
+          </Box>
+        </Stack>
+      </Paper>
+    </Box>
+  );
+}
+
 function ProtectedRoute({ children }: { children: ReactNode }) {
-  const { session } = useAuth();
+  const { isAuthLoading, session } = useAuth();
   const location = useLocation();
+
+  if (isAuthLoading) {
+    return <AuthLoadingScreen />;
+  }
 
   if (!session) {
     return <Navigate replace state={{ from: location }} to="/login" />;
@@ -32,7 +63,11 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 function GuestOnlyRoute({ children }: { children: ReactNode }) {
-  const { session } = useAuth();
+  const { isAuthLoading, session } = useAuth();
+
+  if (isAuthLoading) {
+    return <AuthLoadingScreen />;
+  }
 
   if (session) {
     return <Navigate replace to="/dashboard" />;

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useState } from 'react';
 import { mockInventoryState } from '../data/mockData';
 import { isSupabaseConfigured } from '../lib/supabase';
+import { useAuth } from './AuthContext';
 import { validateSupplierInput } from '../services/inventoryValidation';
 import { createSaleTransaction } from '../services/salesService';
 import { createStockInTransaction } from '../services/stockInService';
@@ -185,6 +186,7 @@ function buildFailure(message: string): OperationResult {
 }
 
 export function InventoryProvider({ children }: { children: ReactNode }) {
+  const { authStatus, session } = useAuth();
   const [state, setState] = useState<InventoryState>(() => getInitialState());
   const [dataSource, setDataSource] = useState<'mock' | 'supabase'>(
     isSupabaseConfigured ? 'supabase' : 'mock',
@@ -208,9 +210,23 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    setDataSource('supabase');
+
+    if (authStatus === 'loading') {
+      setIsDatabaseConnected(false);
+      setIsSyncing(true);
+      return;
+    }
+
+    if (!session) {
+      commitState((current) => createSupabaseBootState(current));
+      setIsDatabaseConnected(false);
+      setIsSyncing(false);
+      return;
+    }
+
     let active = true;
 
-    setDataSource('supabase');
     setIsSyncing(true);
 
     void fetchSupabaseInventorySlices()
@@ -252,7 +268,7 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [authStatus, session?.id]);
 
   const value: InventoryContextValue = {
     ...state,

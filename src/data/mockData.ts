@@ -1,9 +1,7 @@
 import type {
-  AppUser,
   Brand,
   Category,
   InventoryState,
-  MockAccount,
   Product,
   ProductVariant,
   SaleRecord,
@@ -407,31 +405,6 @@ export const mockInventoryState: InventoryState = {
   stockIns,
   sales,
 };
-
-export const mockAccounts: MockAccount[] = [
-  {
-    id: 'user-admin',
-    name: 'Store Admin',
-    email: 'admin@bootroompos.dev',
-    password: 'Admin123!',
-    role: 'admin',
-    status: 'active',
-    createdAt: seedDate,
-    updatedAt: seedDate,
-  },
-  {
-    id: 'user-cashier',
-    name: 'Front Counter',
-    email: 'cashier@bootroompos.dev',
-    password: 'Cashier123!',
-    role: 'cashier',
-    status: 'active',
-    createdAt: seedDate,
-    updatedAt: seedDate,
-  },
-];
-
-export const mockUsers: AppUser[] = mockAccounts;
 
 export const mockSystemSettings: SystemSettings = {
   storeName: 'BootRoom Soccer Shop',

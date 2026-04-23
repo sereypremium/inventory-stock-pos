@@ -1,9 +1,8 @@
-import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import AdminPanelSettingsOutlinedIcon from '@mui/icons-material/AdminPanelSettingsOutlined';
-import DeleteOutlineOutlinedIcon from '@mui/icons-material/DeleteOutlineOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
 import PointOfSaleOutlinedIcon from '@mui/icons-material/PointOfSaleOutlined';
+import RefreshOutlinedIcon from '@mui/icons-material/RefreshOutlined';
 import SearchOutlinedIcon from '@mui/icons-material/SearchOutlined';
 import {
   Alert,
@@ -29,7 +28,6 @@ import {
 } from '@mui/material';
 import type { AlertColor } from '@mui/material';
 import { useEffect, useState } from 'react';
-import { ConfirmDialog } from '../../components/common/ConfirmDialog';
 import { DataCard } from '../../components/common/DataCard';
 import { PageHeader } from '../../components/common/PageHeader';
 import { StatCard } from '../../components/common/StatCard';
@@ -37,44 +35,54 @@ import { StatusChip } from '../../components/common/StatusChip';
 import { TableEmptyState } from '../../components/common/TableEmptyState';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../lib/formatters';
-import type { AppUser, UserInput } from '../../types/models';
+import type { UserProfile, UserProfileInput } from '../../types/models';
 
 interface FeedbackState {
   severity: AlertColor;
   message: string;
 }
 
-const defaultUserForm: UserInput = {
-  name: '',
-  email: '',
-  password: '',
-  role: 'cashier',
+const defaultProfileForm: UserProfileInput = {
+  fullName: '',
+  appRole: 'cashier',
   status: 'active',
 };
 
 export function UserManagementPage() {
-  const { session, users, addUser, updateUser, deleteUser } = useAuth();
+  const { refreshProfiles, session, updateUserProfile, users } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<AppUser | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<AppUser | null>(null);
+  const [editingProfile, setEditingProfile] = useState<UserProfile | null>(null);
 
   const filteredUsers = users
     .filter((user) =>
-      [user.name, user.email, user.role, user.status]
+      [user.fullName, user.email, user.appRole, user.status]
         .join(' ')
         .toLowerCase()
         .includes(searchQuery.trim().toLowerCase()),
     )
-    .sort((left, right) => left.name.localeCompare(right.name));
+    .sort((left, right) => left.fullName.localeCompare(right.fullName));
 
   const activeUsers = users.filter((user) => user.status === 'active').length;
-  const adminUsers = users.filter((user) => user.role === 'admin').length;
-  const cashierUsers = users.filter((user) => user.role === 'cashier').length;
+  const adminUsers = users.filter((user) => user.appRole === 'admin').length;
+  const cashierUsers = users.filter((user) => user.appRole === 'cashier').length;
 
-  const handleSave = async (values: UserInput) => {
-    const result = editingUser ? await updateUser(editingUser.id, values) : await addUser(values);
+  const handleRefresh = async () => {
+    const result = await refreshProfiles();
+
+    setFeedback({
+      severity: result.ok ? 'success' : 'error',
+      message: result.message,
+    });
+  };
+
+  const handleSave = async (values: UserProfileInput) => {
+    if (!editingProfile) {
+      return;
+    }
+
+    const result = await updateUserProfile(editingProfile.id, values);
 
     setFeedback({
       severity: result.ok ? 'success' : 'error',
@@ -83,22 +91,8 @@ export function UserManagementPage() {
 
     if (result.ok) {
       setDialogOpen(false);
-      setEditingUser(null);
+      setEditingProfile(null);
     }
-  };
-
-  const handleDelete = async () => {
-    if (!deleteTarget) {
-      return;
-    }
-
-    const result = await deleteUser(deleteTarget.id);
-
-    setFeedback({
-      severity: result.ok ? 'success' : 'error',
-      message: result.message,
-    });
-    setDeleteTarget(null);
   };
 
   return (
@@ -107,18 +101,22 @@ export function UserManagementPage() {
         action={
           <Button
             onClick={() => {
-              setEditingUser(null);
-              setDialogOpen(true);
+              void handleRefresh();
             }}
-            startIcon={<AddOutlinedIcon />}
+            startIcon={<RefreshOutlinedIcon />}
             variant="contained"
           >
-            Add User
+            Refresh Profiles
           </Button>
         }
-        description="Manage admin and cashier accounts used for sign-in. The page keeps a small, practical rule set so the shop always retains at least one active admin."
+        description="Manage role and status values from the profiles table. Auth users and passwords stay in Supabase Auth, not in the frontend."
         title="User Management"
       />
+
+      <Alert severity="info">
+        Create or invite staff in Supabase Authentication first. The database trigger creates a
+        matching profile, then admins can assign Admin or Cashier access here.
+      </Alert>
 
       {feedback && (
         <Alert onClose={() => setFeedback(null)} severity={feedback.severity}>
@@ -134,28 +132,28 @@ export function UserManagementPage() {
         }}
       >
         <StatCard
-          helper="All sign-in accounts in the active workspace"
+          helper="Profiles visible under current RLS policies"
           icon={<ManageAccountsOutlinedIcon fontSize="small" />}
-          label="Total Users"
+          label="Total Profiles"
           value={String(users.length)}
         />
         <StatCard
           accent="#2d7f4f"
-          helper="Currently available to log in"
-          icon={<AddOutlinedIcon fontSize="small" />}
-          label="Active Users"
+          helper="Profiles allowed to sign in"
+          icon={<ManageAccountsOutlinedIcon fontSize="small" />}
+          label="Active Profiles"
           value={String(activeUsers)}
         />
         <StatCard
           accent="#2f6fcb"
-          helper="System administrators"
+          helper="Full back-office access"
           icon={<AdminPanelSettingsOutlinedIcon fontSize="small" />}
           label="Admins"
           value={String(adminUsers)}
         />
         <StatCard
           accent="#ea6a1f"
-          helper="Front counter accounts"
+          helper="POS and sales access"
           icon={<PointOfSaleOutlinedIcon fontSize="small" />}
           label="Cashiers"
           value={String(cashierUsers)}
@@ -166,7 +164,7 @@ export function UserManagementPage() {
         actions={
           <TextField
             onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Search users"
+            placeholder="Search profiles"
             size="small"
             sx={{ minWidth: { xs: '100%', md: 300 } }}
             value={searchQuery}
@@ -181,14 +179,14 @@ export function UserManagementPage() {
             }}
           />
         }
-        description="Manage admin and cashier accounts from the active workspace data source. Safeguards prevent removing the current session or the last active admin account."
-        title="Account Directory"
+        description="Profile rows provide the app role and status used by route guards, menus, and RLS policies."
+        title="Profile Directory"
       >
         <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell>User</TableCell>
+                <TableCell>Profile</TableCell>
                 <TableCell>Role</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Created</TableCell>
@@ -198,13 +196,13 @@ export function UserManagementPage() {
             </TableHead>
             <TableBody>
               {filteredUsers.length === 0 && (
-                <TableEmptyState colSpan={6} message="No users match the current search." />
+                <TableEmptyState colSpan={6} message="No profiles match the current search." />
               )}
               {filteredUsers.map((user) => (
                 <TableRow hover key={user.id}>
                   <TableCell>
                     <Typography sx={{ fontWeight: 600 }} variant="body2">
-                      {user.name}
+                      {user.fullName || user.email}
                     </Typography>
                     <Typography color="text.secondary" variant="caption">
                       {user.email}
@@ -213,8 +211,8 @@ export function UserManagementPage() {
                   </TableCell>
                   <TableCell>
                     <Chip
-                      color={user.role === 'admin' ? 'primary' : 'secondary'}
-                      label={user.role === 'admin' ? 'Admin' : 'Cashier'}
+                      color={user.appRole === 'admin' ? 'primary' : 'secondary'}
+                      label={user.appRole === 'admin' ? 'Admin' : 'Cashier'}
                       size="small"
                       variant="outlined"
                     />
@@ -227,18 +225,11 @@ export function UserManagementPage() {
                   <TableCell align="right">
                     <IconButton
                       onClick={() => {
-                        setEditingUser(user);
+                        setEditingProfile(user);
                         setDialogOpen(true);
                       }}
                     >
                       <EditOutlinedIcon fontSize="small" />
-                    </IconButton>
-                    <IconButton
-                      color="error"
-                      disabled={session?.id === user.id}
-                      onClick={() => setDeleteTarget(user)}
-                    >
-                      <DeleteOutlineOutlinedIcon fontSize="small" />
                     </IconButton>
                   </TableCell>
                 </TableRow>
@@ -248,46 +239,35 @@ export function UserManagementPage() {
         </TableContainer>
       </DataCard>
 
-      <UserDialog
-        initialValue={editingUser}
+      <ProfileDialog
+        currentProfileId={session?.id ?? null}
+        initialValue={editingProfile}
         onClose={() => {
           setDialogOpen(false);
-          setEditingUser(null);
+          setEditingProfile(null);
         }}
         onSubmit={handleSave}
         open={dialogOpen}
-      />
-
-      <ConfirmDialog
-        confirmLabel="Delete user"
-        description={
-          deleteTarget
-            ? `Delete ${deleteTarget.name}? The current session and the last active admin account cannot be removed.`
-            : ''
-        }
-        onClose={() => setDeleteTarget(null)}
-        onConfirm={() => {
-          void handleDelete();
-        }}
-        open={Boolean(deleteTarget)}
-        title="Delete user"
       />
     </Stack>
   );
 }
 
-function UserDialog({
+function ProfileDialog({
   open,
+  currentProfileId,
   initialValue,
   onClose,
   onSubmit,
 }: {
   open: boolean;
-  initialValue: AppUser | null;
+  currentProfileId: string | null;
+  initialValue: UserProfile | null;
   onClose: () => void;
-  onSubmit: (values: UserInput) => Promise<void>;
+  onSubmit: (values: UserProfileInput) => Promise<void>;
 }) {
-  const [form, setForm] = useState<UserInput>(defaultUserForm);
+  const [form, setForm] = useState<UserProfileInput>(defaultProfileForm);
+  const isCurrentProfile = Boolean(initialValue && currentProfileId === initialValue.id);
 
   useEffect(() => {
     if (!open) {
@@ -297,19 +277,17 @@ function UserDialog({
     setForm(
       initialValue
         ? {
-            name: initialValue.name,
-            email: initialValue.email,
-            password: initialValue.password,
-            role: initialValue.role,
+            fullName: initialValue.fullName,
+            appRole: initialValue.appRole,
             status: initialValue.status,
           }
-        : defaultUserForm,
+        : defaultProfileForm,
     );
   }, [initialValue, open]);
 
   return (
     <Dialog fullWidth maxWidth="sm" onClose={onClose} open={open}>
-      <DialogTitle>{initialValue ? 'Edit User' : 'Add User'}</DialogTitle>
+      <DialogTitle>Edit Profile</DialogTitle>
       <Box
         component="form"
         onSubmit={(event) => {
@@ -329,51 +307,51 @@ function UserDialog({
             <TextField
               label="Full name"
               onChange={(event) =>
-                setForm((current) => ({ ...current, name: event.target.value }))
+                setForm((current) => ({ ...current, fullName: event.target.value }))
               }
               required
-              value={form.name}
+              value={form.fullName}
             />
             <TextField
+              disabled
+              helperText="Email is owned by Supabase Auth."
               label="Email"
-              onChange={(event) =>
-                setForm((current) => ({ ...current, email: event.target.value }))
-              }
-              required
               type="email"
-              value={form.email}
+              value={initialValue?.email ?? ''}
             />
             <TextField
-              helperText="Used for workspace sign-in."
-              label="Password"
-              onChange={(event) =>
-                setForm((current) => ({ ...current, password: event.target.value }))
+              disabled={isCurrentProfile}
+              helperText={
+                isCurrentProfile
+                  ? 'Use another admin account to change your own role.'
+                  : 'Controls admin-only menus and routes.'
               }
-              required
-              type="password"
-              value={form.password}
-            />
-            <TextField
               label="Role"
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  role: event.target.value as UserInput['role'],
+                  appRole: event.target.value as UserProfileInput['appRole'],
                 }))
               }
               required
               select
-              value={form.role}
+              value={form.appRole}
             >
               <MenuItem value="admin">Admin</MenuItem>
               <MenuItem value="cashier">Cashier</MenuItem>
             </TextField>
             <TextField
+              disabled={isCurrentProfile}
+              helperText={
+                isCurrentProfile
+                  ? 'You cannot deactivate your current session.'
+                  : 'Inactive profiles cannot sign in to the POS.'
+              }
               label="Status"
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
-                  status: event.target.value as UserInput['status'],
+                  status: event.target.value as UserProfileInput['status'],
                 }))
               }
               required
@@ -390,7 +368,7 @@ function UserDialog({
             Cancel
           </Button>
           <Button type="submit" variant="contained">
-            {initialValue ? 'Save Changes' : 'Save User'}
+            Save Profile
           </Button>
         </DialogActions>
       </Box>

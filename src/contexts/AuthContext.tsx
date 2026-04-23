@@ -1,191 +1,68 @@
 import type { ReactNode } from 'react';
-import { createContext, useContext, useEffect, useState } from 'react';
-import { mockSystemSettings, mockUsers } from '../data/mockData';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import type { Session as SupabaseSession } from '@supabase/supabase-js';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import {
-  deleteSupabaseUser,
-  fetchSupabaseAuthStore,
+  fetchCurrentProfile,
+  fetchProfiles,
+  saveProfile,
+} from '../services/profileService';
+import {
+  emptySystemSettings,
+  fetchSystemSettings,
   saveSupabaseSettings,
-  saveSupabaseUser,
-} from '../services/supabaseAuthStore';
+} from '../services/settingsService';
 import type {
-  AppUser,
-  MockAccount,
   OperationResult,
   SystemSettings,
   SystemSettingsInput,
-  UserInput,
+  UserProfile,
+  UserProfileInput,
   UserSession,
 } from '../types/models';
 
+type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated';
+
 interface AuthContextValue {
   session: UserSession | null;
-  users: AppUser[];
+  profile: UserProfile | null;
+  users: UserProfile[];
   settings: SystemSettings;
+  authStatus: AuthStatus;
+  authError: string | null;
+  isAuthLoading: boolean;
   login: (email: string, password: string) => Promise<OperationResult>;
-  logout: () => void;
-  addUser: (input: UserInput) => Promise<OperationResult>;
-  updateUser: (userId: string, input: UserInput) => Promise<OperationResult>;
-  deleteUser: (userId: string) => Promise<OperationResult>;
+  logout: () => Promise<void>;
+  refreshProfiles: () => Promise<OperationResult>;
+  updateUserProfile: (
+    profileId: string,
+    input: UserProfileInput,
+  ) => Promise<OperationResult>;
   saveSettings: (input: SystemSettingsInput) => Promise<OperationResult>;
-  demoAccounts: MockAccount[];
 }
-
-const AUTH_STORAGE_KEY = 'bootroom-pos.auth-session';
-const USERS_STORAGE_KEY = 'bootroom-pos.auth-users';
-const SETTINGS_STORAGE_KEY = 'bootroom-pos.system-settings';
-
-const emptySystemSettings: SystemSettings = {
-  storeName: '',
-  branchName: '',
-  address: '',
-  phone: '',
-  receiptFooter: '',
-  reportFooter: '',
-};
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-function persistSession(session: UserSession | null) {
-  if (session) {
-    localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(session));
-    return;
-  }
-
-  localStorage.removeItem(AUTH_STORAGE_KEY);
-}
-
-function buildSession(user: AppUser): UserSession {
+function buildSession(profile: UserProfile): UserSession {
   return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
+    id: profile.id,
+    name: profile.fullName.trim() || profile.email,
+    email: profile.email,
+    role: profile.appRole,
+    status: profile.status,
   };
 }
 
-function normalizeUsers(value: unknown) {
-  if (!Array.isArray(value)) {
-    return mockUsers;
-  }
-
-  return value.map((entry, index) => {
-    const candidate = entry as Partial<AppUser>;
-    const fallback = mockUsers[index] ?? mockUsers[0];
-
-    return {
-      id: candidate.id ?? crypto.randomUUID(),
-      name: candidate.name?.trim() || fallback.name,
-      email: candidate.email?.trim().toLowerCase() || fallback.email,
-      password: candidate.password?.trim() || fallback.password,
-      role: candidate.role === 'cashier' ? 'cashier' : 'admin',
-      status: candidate.status === 'inactive' ? 'inactive' : 'active',
-      createdAt: candidate.createdAt ?? fallback.createdAt,
-      updatedAt: candidate.updatedAt ?? fallback.updatedAt,
-    } satisfies AppUser;
-  });
+function buildFailure(message: string): OperationResult {
+  return {
+    ok: false,
+    message,
+  };
 }
 
-function getInitialUsers() {
-  if (isSupabaseConfigured) {
-    return [];
-  }
-
-  if (typeof window === 'undefined') {
-    return mockUsers;
-  }
-
-  const storedUsers = localStorage.getItem(USERS_STORAGE_KEY);
-
-  if (!storedUsers) {
-    return mockUsers;
-  }
-
-  try {
-    return normalizeUsers(JSON.parse(storedUsers));
-  } catch {
-    localStorage.removeItem(USERS_STORAGE_KEY);
-    return mockUsers;
-  }
-}
-
-function getInitialSettings() {
-  if (isSupabaseConfigured) {
-    return emptySystemSettings;
-  }
-
-  if (typeof window === 'undefined') {
-    return mockSystemSettings;
-  }
-
-  const storedSettings = localStorage.getItem(SETTINGS_STORAGE_KEY);
-
-  if (!storedSettings) {
-    return mockSystemSettings;
-  }
-
-  try {
-    const parsed = JSON.parse(storedSettings) as Partial<SystemSettings>;
-
-    return {
-      storeName: parsed.storeName?.trim() || mockSystemSettings.storeName,
-      branchName: parsed.branchName?.trim() || mockSystemSettings.branchName,
-      address: parsed.address?.trim() || mockSystemSettings.address,
-      phone: parsed.phone?.trim() || mockSystemSettings.phone,
-      receiptFooter: parsed.receiptFooter?.trim() || mockSystemSettings.receiptFooter,
-      reportFooter: parsed.reportFooter?.trim() || mockSystemSettings.reportFooter,
-    } satisfies SystemSettings;
-  } catch {
-    localStorage.removeItem(SETTINGS_STORAGE_KEY);
-    return mockSystemSettings;
-  }
-}
-
-function getInitialSession(users: AppUser[]) {
-  if (typeof window === 'undefined') {
-    return null;
-  }
-
-  const storedSession = localStorage.getItem(AUTH_STORAGE_KEY);
-
-  if (!storedSession) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(storedSession) as UserSession;
-
-    if (isSupabaseConfigured) {
-      return parsed;
-    }
-
-    const matchedUser = users.find(
-      (user) => user.id === parsed.id && user.status === 'active',
-    );
-
-    if (!matchedUser) {
-      localStorage.removeItem(AUTH_STORAGE_KEY);
-      return null;
-    }
-
-    return buildSession(matchedUser);
-  } catch {
-    localStorage.removeItem(AUTH_STORAGE_KEY);
-    return null;
-  }
-}
-
-function validateUserInput(input: UserInput) {
-  if (!input.name.trim()) {
-    return 'User name is required.';
-  }
-
-  if (!input.email.trim()) {
-    return 'User email is required.';
-  }
-
-  if (!input.password.trim() || input.password.trim().length < 6) {
-    return 'Password must be at least 6 characters.';
+function validateProfileInput(input: UserProfileInput) {
+  if (!input.fullName.trim()) {
+    return 'Full name is required.';
   }
 
   return null;
@@ -203,308 +80,298 @@ function validateSettingsInput(input: SystemSettingsInput) {
   return null;
 }
 
-function persistUsers(users: AppUser[]) {
-  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(users));
-}
-
-function persistSettings(settings: SystemSettings) {
-  localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+function formatAuthError(error: unknown) {
+  return error instanceof Error ? error.message : 'Unknown error.';
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState<AppUser[]>(() => getInitialUsers());
-  const [settings, setSettings] = useState<SystemSettings>(() => getInitialSettings());
-  const [session, setSession] = useState<UserSession | null>(() => getInitialSession(users));
-  const [isSyncing, setIsSyncing] = useState(isSupabaseConfigured);
+  const [session, setSession] = useState<UserSession | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [users, setUsers] = useState<UserProfile[]>([]);
+  const [settings, setSettings] = useState<SystemSettings>(emptySystemSettings);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(
+    isSupabaseConfigured ? 'loading' : 'unauthenticated',
+  );
+  const [authError, setAuthError] = useState<string | null>(
+    isSupabaseConfigured
+      ? null
+      : 'Supabase Auth is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before signing in.',
+  );
+  const signOutMessageRef = useRef<string | null>(null);
 
-  const syncSessionWithUser = (user: AppUser | null) => {
-    if (!user) {
-      persistSession(null);
-      setSession(null);
-      return;
+  const clearAuthState = (message: string | null = null) => {
+    setSession(null);
+    setProfile(null);
+    setUsers([]);
+    setSettings(emptySystemSettings);
+    setAuthStatus('unauthenticated');
+    setAuthError(message);
+  };
+
+  const signOutSafely = async (message: string) => {
+    signOutMessageRef.current = message;
+
+    if (supabase) {
+      await supabase.auth.signOut();
     }
 
-    const nextSession = buildSession(user);
-    persistSession(nextSession);
-    setSession(nextSession);
+    clearAuthState(message);
   };
 
-  const updateUsers = (updater: (current: AppUser[]) => AppUser[]) => {
-    setUsers((current) => {
-      const nextUsers = updater(current);
-      persistUsers(nextUsers);
-      return nextUsers;
-    });
+  const loadWorkspaceState = async (nextProfile: UserProfile) => {
+    const workspaceErrors: string[] = [];
+    await fetchSystemSettings()
+      .then((nextSettings) => {
+        setSettings(nextSettings);
+      })
+      .catch((error) => {
+        setSettings(emptySystemSettings);
+        workspaceErrors.push(
+          `Store settings could not be loaded: ${formatAuthError(error)}`,
+        );
+      });
+
+    if (nextProfile.appRole !== 'admin') {
+      setUsers([nextProfile]);
+      return workspaceErrors;
+    }
+
+    await fetchProfiles()
+      .then((nextUsers) => {
+        setUsers(nextUsers);
+      })
+      .catch((error) => {
+        setUsers([nextProfile]);
+        workspaceErrors.push(
+          `Profile directory could not be loaded: ${formatAuthError(error)}`,
+        );
+      });
+
+    return workspaceErrors;
   };
 
-  const applySettings = (nextSettings: SystemSettings) => {
-    setSettings(nextSettings);
-    persistSettings(nextSettings);
+  const applySupabaseSession = async (
+    nextAuthSession: SupabaseSession | null,
+  ): Promise<OperationResult> => {
+    if (!nextAuthSession) {
+      clearAuthState();
+      return { ok: true, message: 'Signed out.' };
+    }
+
+    setAuthStatus('loading');
+    setAuthError(null);
+
+    try {
+      const nextProfile = await fetchCurrentProfile(nextAuthSession.user.id);
+
+      if (!nextProfile) {
+        const message =
+          'Your Supabase Auth user does not have a profile yet. Ask an admin to create or repair your profile before signing in.';
+        await signOutSafely(message);
+        return buildFailure(message);
+      }
+
+      if (nextProfile.status !== 'active') {
+        const message = 'Your account profile is inactive. Ask an admin to reactivate it.';
+        await signOutSafely(message);
+        return buildFailure(message);
+      }
+
+      const nextSession = buildSession(nextProfile);
+      setProfile(nextProfile);
+      setSession(nextSession);
+
+      const workspaceErrors = await loadWorkspaceState(nextProfile);
+      setAuthStatus('authenticated');
+      setAuthError(workspaceErrors[0] ?? null);
+
+      return {
+        ok: true,
+        message: `Welcome back, ${nextSession.name}.`,
+      };
+    } catch (error) {
+      const message = `Signed in, but your profile could not be loaded safely: ${formatAuthError(error)}`;
+      await signOutSafely(message);
+      return buildFailure(message);
+    }
   };
 
   useEffect(() => {
-    if (!isSupabaseConfigured) {
-      setIsSyncing(false);
+    if (!isSupabaseConfigured || !supabase) {
+      clearAuthState(
+        'Supabase Auth is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before signing in.',
+      );
       return;
     }
 
     let active = true;
 
-    setIsSyncing(true);
+    void supabase.auth.getSession().then(async ({ data, error }) => {
+      if (!active) {
+        return;
+      }
 
-    void fetchSupabaseAuthStore()
-      .then((remoteStore) => {
-        if (!active) {
-          return;
-        }
+      if (error) {
+        clearAuthState(`Could not restore your Supabase session: ${error.message}`);
+        return;
+      }
 
-        setUsers(remoteStore.users);
-        persistUsers(remoteStore.users);
-        applySettings(remoteStore.settings);
+      await applySupabaseSession(data.session);
+    });
 
-        setSession((currentSession) => {
-          const storedSession = currentSession ?? getInitialSession(remoteStore.users);
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, nextAuthSession) => {
+      if (event === 'SIGNED_OUT') {
+        const message = signOutMessageRef.current;
+        signOutMessageRef.current = null;
+        clearAuthState(message);
+        return;
+      }
 
-          if (!storedSession) {
-            persistSession(null);
-            return null;
-          }
-
-          const matchedUser = remoteStore.users.find(
-            (user) => user.id === storedSession.id && user.status === 'active',
-          );
-
-          if (!matchedUser) {
-            persistSession(null);
-            return null;
-          }
-
-          const nextSession = buildSession(matchedUser);
-          persistSession(nextSession);
-          return nextSession;
-        });
-      })
-      .catch(() => {
-        if (!active) {
-          return;
-        }
-
-        setUsers([]);
-      })
-      .finally(() => {
-        if (!active) {
-          return;
-        }
-
-        setIsSyncing(false);
-      });
+      if (event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        void applySupabaseSession(nextAuthSession);
+      }
+    });
 
     return () => {
       active = false;
+      subscription.unsubscribe();
     };
   }, []);
 
+  const refreshProfiles = async (): Promise<OperationResult> => {
+    if (!profile) {
+      return buildFailure('Sign in before loading profiles.');
+    }
+
+    if (profile.appRole !== 'admin') {
+      setUsers([profile]);
+      return { ok: true, message: 'Current profile loaded.' };
+    }
+
+    try {
+      const nextUsers = await fetchProfiles();
+      setUsers(nextUsers);
+      return { ok: true, message: 'Profiles refreshed successfully.' };
+    } catch (error) {
+      return buildFailure(`Could not refresh profiles: ${formatAuthError(error)}`);
+    }
+  };
+
+  const updateUserProfile = async (
+    profileId: string,
+    input: UserProfileInput,
+  ): Promise<OperationResult> => {
+    if (!profile || profile.appRole !== 'admin') {
+      return buildFailure('Only admins can update profile roles and status.');
+    }
+
+    const validationMessage = validateProfileInput(input);
+
+    if (validationMessage) {
+      return buildFailure(validationMessage);
+    }
+
+    const existingProfile = users.find((user) => user.id === profileId);
+
+    if (!existingProfile) {
+      return buildFailure('Profile not found.');
+    }
+
+    const changingOwnAccess =
+      profile.id === profileId &&
+      (input.appRole !== profile.appRole || input.status !== profile.status);
+
+    if (changingOwnAccess) {
+      return buildFailure('You cannot change your own role or status while signed in.');
+    }
+
+    const activeAdminCount = users.filter(
+      (user) => user.appRole === 'admin' && user.status === 'active',
+    ).length;
+    const removingLastAdmin =
+      existingProfile.appRole === 'admin' &&
+      existingProfile.status === 'active' &&
+      activeAdminCount === 1 &&
+      (input.appRole !== 'admin' || input.status !== 'active');
+
+    if (removingLastAdmin) {
+      return buildFailure('At least one active admin profile must remain in the system.');
+    }
+
+    const remoteResult = await saveProfile(profileId, input);
+
+    if (!remoteResult.ok || !remoteResult.record) {
+      return buildFailure(remoteResult.message);
+    }
+
+    setUsers((current) =>
+      current.map((user) => (user.id === profileId ? remoteResult.record! : user)),
+    );
+
+    if (profile.id === profileId) {
+      setProfile(remoteResult.record);
+      setSession(buildSession(remoteResult.record));
+    }
+
+    return { ok: true, message: 'Profile updated successfully.' };
+  };
+
   const value: AuthContextValue = {
     session,
+    profile,
     users,
     settings,
-    demoAccounts: users.filter((user) => user.status === 'active') as MockAccount[],
+    authStatus,
+    authError,
+    isAuthLoading: authStatus === 'loading',
     login: async (email, password) => {
-      if (isSupabaseConfigured && isSyncing) {
-        return {
-          ok: false,
-          message: 'Accounts are still syncing from Supabase. Please wait a moment and try again.',
-        };
+      if (!isSupabaseConfigured || !supabase) {
+        const message =
+          'Supabase Auth is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before signing in.';
+        setAuthError(message);
+        return buildFailure(message);
       }
 
-      const match = users.find(
-        (user) =>
-          user.status === 'active' &&
-          user.email.toLowerCase() === email.trim().toLowerCase() &&
-          user.password === password,
-      );
+      setAuthStatus('loading');
+      setAuthError(null);
 
-      if (!match) {
-        return {
-          ok: false,
-          message:
-            users.length === 0
-              ? 'No active accounts are available in the current workspace data source.'
-              : 'Invalid credentials. Use one of the active accounts shown on the page.',
-        };
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      });
+
+      if (error) {
+        clearAuthState(error.message || 'Invalid email or password.');
+        return buildFailure(error.message || 'Invalid email or password.');
       }
 
-      syncSessionWithUser(match);
-
-      return {
-        ok: true,
-        message: `Welcome back, ${match.name}.`,
-      };
+      return applySupabaseSession(data.session);
     },
-    logout: () => {
-      syncSessionWithUser(null);
+    logout: async () => {
+      signOutMessageRef.current = null;
+
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
+
+      clearAuthState();
     },
-    addUser: async (input) => {
-      const validationMessage = validateUserInput(input);
-
-      if (validationMessage) {
-        return { ok: false, message: validationMessage };
-      }
-
-      const duplicateEmail = users.some(
-        (user) => user.email.toLowerCase() === input.email.trim().toLowerCase(),
-      );
-
-      if (duplicateEmail) {
-        return { ok: false, message: 'User email already exists.' };
-      }
-
-      let nextUser: AppUser = {
-        id: crypto.randomUUID(),
-        name: input.name.trim(),
-        email: input.email.trim().toLowerCase(),
-        password: input.password.trim(),
-        role: input.role,
-        status: input.status,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      if (isSupabaseConfigured) {
-        const remoteResult = await saveSupabaseUser(nextUser);
-
-        if (!remoteResult.ok || !remoteResult.record) {
-          return { ok: false, message: remoteResult.message };
-        }
-
-        nextUser = remoteResult.record;
-      }
-
-      updateUsers((current) => [nextUser, ...current]);
-
-      return { ok: true, message: 'User saved successfully.' };
-    },
-    updateUser: async (userId, input) => {
-      const validationMessage = validateUserInput(input);
-
-      if (validationMessage) {
-        return { ok: false, message: validationMessage };
-      }
-
-      const existingUser = users.find((user) => user.id === userId);
-
-      if (!existingUser) {
-        return { ok: false, message: 'User not found.' };
-      }
-
-      if (
-        session?.id === userId &&
-        input.status === 'inactive'
-      ) {
-        return { ok: false, message: 'You cannot deactivate your own active account.' };
-      }
-
-      const duplicateEmail = users.some(
-        (user) =>
-          user.id !== userId && user.email.toLowerCase() === input.email.trim().toLowerCase(),
-      );
-
-      if (duplicateEmail) {
-        return { ok: false, message: 'User email already exists.' };
-      }
-
-      const activeAdminCount = users.filter(
-        (user) => user.role === 'admin' && user.status === 'active',
-      ).length;
-      const removingLastAdmin =
-        existingUser.role === 'admin' &&
-        existingUser.status === 'active' &&
-        activeAdminCount === 1 &&
-        (input.role !== 'admin' || input.status !== 'active');
-
-      if (removingLastAdmin) {
-        return {
-          ok: false,
-          message: 'At least one active admin account must remain in the system.',
-        };
-      }
-
-      let nextUser: AppUser = {
-        ...existingUser,
-        name: input.name.trim(),
-        email: input.email.trim().toLowerCase(),
-        password: input.password.trim(),
-        role: input.role,
-        status: input.status,
-        updatedAt: new Date().toISOString(),
-      };
-
-      if (isSupabaseConfigured) {
-        const remoteResult = await saveSupabaseUser(nextUser);
-
-        if (!remoteResult.ok || !remoteResult.record) {
-          return { ok: false, message: remoteResult.message };
-        }
-
-        nextUser = remoteResult.record;
-      }
-
-      updateUsers((current) =>
-        current.map((user) => (user.id === userId ? nextUser : user)),
-      );
-
-      if (session?.id === userId) {
-        syncSessionWithUser(nextUser);
-      }
-
-      return { ok: true, message: 'User updated successfully.' };
-    },
-    deleteUser: async (userId) => {
-      const existingUser = users.find((user) => user.id === userId);
-
-      if (!existingUser) {
-        return { ok: false, message: 'User not found.' };
-      }
-
-      if (session?.id === userId) {
-        return { ok: false, message: 'You cannot delete the account you are currently using.' };
-      }
-
-      const activeAdminCount = users.filter(
-        (user) => user.role === 'admin' && user.status === 'active',
-      ).length;
-      const deletingLastAdmin =
-        existingUser.role === 'admin' &&
-        existingUser.status === 'active' &&
-        activeAdminCount === 1;
-
-      if (deletingLastAdmin) {
-        return {
-          ok: false,
-          message: 'At least one active admin account must remain in the system.',
-        };
-      }
-
-      if (isSupabaseConfigured) {
-        const remoteResult = await deleteSupabaseUser(userId);
-
-        if (!remoteResult.ok) {
-          return { ok: false, message: remoteResult.message };
-        }
-      }
-
-      updateUsers((current) => current.filter((user) => user.id !== userId));
-
-      return { ok: true, message: 'User deleted successfully.' };
-    },
+    refreshProfiles,
+    updateUserProfile,
     saveSettings: async (input) => {
+      if (!profile || profile.appRole !== 'admin') {
+        return buildFailure('Only admins can update store settings.');
+      }
+
       const validationMessage = validateSettingsInput(input);
 
       if (validationMessage) {
-        return { ok: false, message: validationMessage };
+        return buildFailure(validationMessage);
       }
 
-      let nextSettings: SystemSettings = {
+      const nextSettings: SystemSettings = {
         storeName: input.storeName.trim(),
         branchName: input.branchName.trim(),
         address: input.address.trim(),
@@ -512,19 +379,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         receiptFooter: input.receiptFooter.trim(),
         reportFooter: input.reportFooter.trim(),
       };
+      const remoteResult = await saveSupabaseSettings(nextSettings);
 
-      if (isSupabaseConfigured) {
-        const remoteResult = await saveSupabaseSettings(nextSettings);
-
-        if (!remoteResult.ok || !remoteResult.record) {
-          return { ok: false, message: remoteResult.message };
-        }
-
-        nextSettings = remoteResult.record;
+      if (!remoteResult.ok || !remoteResult.record) {
+        return buildFailure(remoteResult.message);
       }
 
-      applySettings(nextSettings);
-
+      setSettings(remoteResult.record);
       return { ok: true, message: 'Settings saved successfully.' };
     },
   };

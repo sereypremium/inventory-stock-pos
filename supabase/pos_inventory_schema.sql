@@ -762,32 +762,14 @@ begin
   where sh.id::text = item_totals.sale_id;
 end $$;
 
-insert into public.system_settings (
-  id,
-  created_at,
-  updated_at,
-  store_name,
-  branch_name,
-  address,
-  phone,
-  receipt_footer,
-  report_footer
-)
-select
-  'store-profile',
-  timezone('utc', now()),
-  timezone('utc', now()),
-  'BootRoom Soccer Shop',
-  'Main Counter',
-  '214 Matchday Avenue, San Diego, CA',
-  '+1 415 555 0101',
-  'Thank you for shopping with BootRoom.',
-  'Internal report generated from the local demo workspace.'
-where not exists (
-  select 1
-  from public.system_settings
-  where id = 'store-profile'
-);
+delete from public.system_settings
+where id = 'store-profile'
+  and store_name = 'BootRoom Soccer Shop'
+  and branch_name = 'Main Counter'
+  and address = '214 Matchday Avenue, San Diego, CA'
+  and phone = '+1 415 555 0101'
+  and receipt_footer = 'Thank you for shopping with BootRoom.'
+  and report_footer = 'Internal report generated from the local demo workspace.';
 
 insert into public.app_users (
   id,

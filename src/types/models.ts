@@ -133,17 +133,14 @@ export interface UserSession {
   name: string;
   email: string;
   role: Role;
-}
-
-export interface AppUser extends TimestampedRecord {
-  name: string;
-  email: string;
-  password: string;
-  role: Role;
   status: EntityStatus;
 }
 
-export interface MockAccount extends AppUser {
+export interface UserProfile extends TimestampedRecord {
+  email: string;
+  fullName: string;
+  appRole: Role;
+  status: EntityStatus;
 }
 
 export interface SystemSettings {
@@ -166,7 +163,7 @@ export type CategoryInput = Omit<Category, keyof TimestampedRecord>;
 export type ProductInput = Omit<Product, keyof TimestampedRecord>;
 export type ProductVariantInput = Omit<ProductVariant, keyof TimestampedRecord>;
 export type SupplierInput = Omit<Supplier, keyof TimestampedRecord>;
-export type UserInput = Omit<AppUser, keyof TimestampedRecord>;
+export type UserProfileInput = Pick<UserProfile, 'fullName' | 'appRole' | 'status'>;
 export type SystemSettingsInput = SystemSettings;
 
 export interface StockInItemInput {

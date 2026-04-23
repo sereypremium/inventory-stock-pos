@@ -17,6 +17,7 @@ interface BrandRow {
   id: string;
   created_at: string;
   updated_at: string;
+  created_by?: string | null;
   name: string;
   code: string;
   origin_country: string;
@@ -27,6 +28,7 @@ interface CategoryRow {
   id: string;
   created_at: string;
   updated_at: string;
+  created_by?: string | null;
   name: string;
   code: string;
   description: string;
@@ -37,6 +39,7 @@ interface ProductRow {
   id: string;
   created_at: string;
   updated_at: string;
+  created_by?: string | null;
   name: string;
   style_code: string;
   image_url: string | null;
@@ -52,6 +55,7 @@ interface ProductVariantRow {
   id: string;
   created_at: string;
   updated_at: string;
+  created_by?: string | null;
   product_id: string;
   sku: string;
   barcode: string | null;
@@ -68,6 +72,7 @@ interface SupplierRow {
   id: string;
   created_at: string;
   updated_at: string;
+  created_by?: string | null;
   name: string;
   code: string;
   contact_person: string;
@@ -81,6 +86,7 @@ interface PurchaseHeaderRow {
   id: string;
   created_at: string;
   updated_at: string;
+  created_by?: string | null;
   reference_no: string;
   supplier_id: string;
   supplier_name: string;
@@ -95,6 +101,7 @@ interface PurchaseHeaderRow {
 interface PurchaseItemRow {
   id: string;
   created_at: string;
+  created_by?: string | null;
   purchase_id: string;
   product_id: string;
   variant_id: string;
@@ -111,6 +118,7 @@ interface SaleHeaderRow {
   id: string;
   created_at: string;
   updated_at: string;
+  created_by?: string | null;
   receipt_no: string;
   sold_at: string;
   cashier_id: string;
@@ -130,6 +138,7 @@ interface SaleHeaderRow {
 interface SaleItemRow {
   id: string;
   created_at: string;
+  created_by?: string | null;
   sale_id: string;
   product_id: string;
   variant_id: string;
@@ -163,6 +172,17 @@ function getClient() {
   }
 
   return supabase;
+}
+
+async function getAuthenticatedUserId() {
+  const client = getClient();
+  const { data, error } = await client.auth.getUser();
+
+  if (error || !data.user) {
+    throw new Error(error?.message || 'Sign in again before saving this transaction.');
+  }
+
+  return data.user.id;
 }
 
 function buildRemoteFailure(message: string): OperationResult {
@@ -825,10 +845,15 @@ export async function createSupabasePurchaseTransaction(
 ): Promise<OperationResult> {
   try {
     const client = getClient();
-    const purchaseHeaderRow = mapPurchaseHeaderToRow(stockIn);
-    const purchaseItemRows = stockIn.items.map((item) =>
-      mapPurchaseItemToRow(item, stockIn.id, stockIn.createdAt),
-    );
+    const userId = await getAuthenticatedUserId();
+    const purchaseHeaderRow = {
+      ...mapPurchaseHeaderToRow(stockIn),
+      created_by: userId,
+    };
+    const purchaseItemRows = stockIn.items.map((item) => ({
+      ...mapPurchaseItemToRow(item, stockIn.id, stockIn.createdAt),
+      created_by: userId,
+    }));
 
     const headerInsert = await client.from('purchase_headers').insert(purchaseHeaderRow);
 
@@ -871,8 +896,15 @@ export async function createSupabaseSaleTransaction(
 ): Promise<OperationResult> {
   try {
     const client = getClient();
-    const saleHeaderRow = mapSaleHeaderToRow(sale);
-    const saleItemRows = sale.items.map((item) => mapSaleItemToRow(item, sale.id, sale.createdAt));
+    const userId = await getAuthenticatedUserId();
+    const saleHeaderRow = {
+      ...mapSaleHeaderToRow(sale),
+      created_by: userId,
+    };
+    const saleItemRows = sale.items.map((item) => ({
+      ...mapSaleItemToRow(item, sale.id, sale.createdAt),
+      created_by: userId,
+    }));
 
     const headerInsert = await client.from('sale_headers').insert(saleHeaderRow);
 

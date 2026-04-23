@@ -7,7 +7,6 @@ import {
   Box,
   Button,
   Card,
-  CardActionArea,
   CardContent,
   Chip,
   Container,
@@ -16,46 +15,41 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { AppLogo } from '../../components/app/AppLogo';
 import { useAuth } from '../../contexts/AuthContext';
-import { useInventory } from '../../contexts/InventoryContext';
 import { isSupabaseConfigured } from '../../lib/supabase';
 
 export function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { demoAccounts, login } = useAuth();
-  const { isDatabaseConnected, isSyncing } = useInventory();
-  const [email, setEmail] = useState(demoAccounts[0]?.email ?? '');
-  const [password, setPassword] = useState(demoAccounts[0]?.password ?? '');
+  const { authError, authStatus, login } = useAuth();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const nextPath =
     ((location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? '/dashboard');
 
-  useEffect(() => {
-    if (demoAccounts.length === 0 || email || password) {
-      return;
-    }
-
-    setEmail(demoAccounts[0].email);
-    setPassword(demoAccounts[0].password);
-  }, [demoAccounts, email, password]);
-
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    setIsSubmitting(true);
 
-    const result = await login(email, password);
+    try {
+      const result = await login(email, password);
 
-    if (!result.ok) {
-      setError(result.message);
-      return;
+      if (!result.ok) {
+        setError(result.message);
+        return;
+      }
+
+      setError(null);
+      navigate(nextPath, { replace: true });
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setError(null);
-    navigate(nextPath, { replace: true });
   };
 
   return (
@@ -108,15 +102,7 @@ export function LoginPage() {
                     sx={{ backgroundColor: 'rgba(255,255,255,0.16)', color: 'common.white' }}
                   />
                   <Chip
-                    label={
-                      isDatabaseConnected
-                        ? 'Database connected'
-                        : isSyncing
-                          ? 'Connecting...'
-                          : isSupabaseConfigured
-                            ? 'Supabase unavailable'
-                            : 'Mock mode'
-                    }
+                    label={isSupabaseConfigured ? 'Supabase Auth' : 'Auth setup required'}
                     size="small"
                     sx={{ backgroundColor: 'rgba(255,255,255,0.16)', color: 'common.white' }}
                   />
@@ -131,8 +117,8 @@ export function LoginPage() {
                   sx={{ color: 'rgba(255,255,255,0.78)', maxWidth: 560, mt: 2 }}
                   variant="body1"
                 >
-                  This Phase 1 workspace covers the core catalog setup: brands, categories,
-                  products, and size-color variants with stock visibility at the variant level.
+                  Sign in with your Supabase Auth email and password. Your workspace role is loaded
+                  from the profiles table before the POS opens.
                 </Typography>
               </Box>
 
@@ -185,61 +171,17 @@ export function LoginPage() {
               <Box>
                 <Typography variant="h5">Sign in</Typography>
                 <Typography color="text.secondary" sx={{ mt: 1 }} variant="body2">
-                  {isDatabaseConnected
-                    ? 'Use an active account from the live workspace database.'
-                    : isSyncing
-                      ? 'Connecting to the live workspace data now.'
-                      : isSupabaseConfigured
-                        ? 'Supabase is configured but account data is not available yet.'
-                        : 'Use one of the local demo accounts below while Supabase env vars are not configured.'}
+                  Use an active Supabase Auth account with a matching profile row.
                 </Typography>
               </Box>
 
-              {error && <Alert severity="error">{error}</Alert>}
-              {demoAccounts.length === 0 && !isSyncing && (
-                <Alert severity="info">
-                  No active sign-in accounts are available in the current database yet.
+              {(error || authError) && <Alert severity="error">{error ?? authError}</Alert>}
+              {!isSupabaseConfigured && (
+                <Alert severity="warning">
+                  Supabase Auth is required for production sign-in. Add the Vite Supabase URL and
+                  anon key environment variables, then create Auth users and profiles in Supabase.
                 </Alert>
               )}
-
-              <Box
-                sx={{
-                  display: 'grid',
-                  gap: 1.5,
-                  gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
-                }}
-              >
-                {demoAccounts.map((account) => (
-                  <Card key={account.id} variant="outlined">
-                    <CardActionArea
-                      onClick={() => {
-                        setEmail(account.email);
-                        setPassword(account.password);
-                        setError(null);
-                      }}
-                    >
-                      <CardContent>
-                        <Stack direction="row" spacing={2} sx={{ justifyContent: 'space-between' }}>
-                          <Box>
-                            <Typography variant="subtitle2">{account.name}</Typography>
-                            <Typography color="text.secondary" sx={{ mt: 0.5 }} variant="body2">
-                              {account.email}
-                            </Typography>
-                          </Box>
-                          <Chip
-                            color={account.role === 'admin' ? 'primary' : 'secondary'}
-                            label={account.role}
-                            size="small"
-                          />
-                        </Stack>
-                        <Typography color="text.secondary" sx={{ mt: 1.5 }} variant="caption">
-                          Password: {account.password}
-                        </Typography>
-                      </CardContent>
-                    </CardActionArea>
-                  </Card>
-                ))}
-              </Box>
 
               <Box component="form" onSubmit={handleSubmit}>
                 <Stack spacing={2}>
@@ -257,8 +199,16 @@ export function LoginPage() {
                     type="password"
                     value={password}
                   />
-                  <Button endIcon={<ArrowForwardOutlinedIcon />} size="large" type="submit" variant="contained">
-                    Enter workspace
+                  <Button
+                    disabled={!isSupabaseConfigured || isSubmitting || authStatus === 'loading'}
+                    endIcon={<ArrowForwardOutlinedIcon />}
+                    size="large"
+                    type="submit"
+                    variant="contained"
+                  >
+                    {isSubmitting || authStatus === 'loading'
+                      ? 'Checking access...'
+                      : 'Enter workspace'}
                   </Button>
                 </Stack>
               </Box>

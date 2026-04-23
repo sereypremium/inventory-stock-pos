@@ -1,20 +1,8 @@
 import { supabase } from '../lib/supabase';
 import type {
-  AppUser,
   OperationResult,
   SystemSettings,
 } from '../types/models';
-
-interface AppUserRow {
-  id: string;
-  created_at: string;
-  updated_at: string;
-  name: string;
-  email: string;
-  password: string;
-  role: AppUser['role'];
-  status: AppUser['status'];
-}
 
 interface SystemSettingsRow {
   id: string;
@@ -33,7 +21,8 @@ interface RemoteEntityResult<T> extends OperationResult {
 }
 
 const SETTINGS_ROW_ID = 'store-profile';
-const emptySystemSettings: SystemSettings = {
+
+export const emptySystemSettings: SystemSettings = {
   storeName: '',
   branchName: '',
   address: '',
@@ -54,32 +43,6 @@ function buildRemoteFailure(message: string): OperationResult {
   return {
     ok: false,
     message,
-  };
-}
-
-function mapUserRowToModel(row: AppUserRow): AppUser {
-  return {
-    id: row.id,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    name: row.name,
-    email: row.email,
-    password: row.password,
-    role: row.role,
-    status: row.status,
-  };
-}
-
-function mapUserToRow(user: AppUser): AppUserRow {
-  return {
-    id: user.id,
-    created_at: user.createdAt,
-    updated_at: user.updatedAt,
-    name: user.name,
-    email: user.email,
-    password: user.password,
-    role: user.role,
-    status: user.status,
   };
 }
 
@@ -114,75 +77,19 @@ function mapSettingsToRow(settings: SystemSettings): SystemSettingsRow {
   };
 }
 
-export async function fetchSupabaseAuthStore(): Promise<{
-  users: AppUser[];
-  settings: SystemSettings;
-}> {
+export async function fetchSystemSettings(): Promise<SystemSettings> {
   const client = getClient();
-  const [usersResult, settingsResult] = await Promise.all([
-    client.from('app_users').select('*').order('created_at', { ascending: false }),
-    client.from('system_settings').select('*').eq('id', SETTINGS_ROW_ID).maybeSingle(),
-  ]);
+  const { data, error } = await client
+    .from('system_settings')
+    .select('*')
+    .eq('id', SETTINGS_ROW_ID)
+    .maybeSingle();
 
-  if (usersResult.error) {
-    throw new Error(usersResult.error.message);
+  if (error) {
+    throw new Error(error.message);
   }
 
-  if (settingsResult.error) {
-    throw new Error(settingsResult.error.message);
-  }
-
-  return {
-    users: ((usersResult.data ?? []) as AppUserRow[]).map(mapUserRowToModel),
-    settings: mapSettingsRowToModel(settingsResult.data as SystemSettingsRow | null),
-  };
-}
-
-export async function saveSupabaseUser(user: AppUser): Promise<RemoteEntityResult<AppUser>> {
-  try {
-    const client = getClient();
-    const { data, error } = await client
-      .from('app_users')
-      .upsert(mapUserToRow(user))
-      .select()
-      .single();
-
-    if (error) {
-      return buildRemoteFailure(`Could not save the user to Supabase: ${error.message}`);
-    }
-
-    return {
-      ok: true,
-      message: 'User saved successfully.',
-      recordId: data.id,
-      record: mapUserRowToModel(data as AppUserRow),
-    };
-  } catch (error) {
-    return buildRemoteFailure(
-      `Could not save the user to Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
-    );
-  }
-}
-
-export async function deleteSupabaseUser(userId: string): Promise<OperationResult> {
-  try {
-    const client = getClient();
-    const { error } = await client.from('app_users').delete().eq('id', userId);
-
-    if (error) {
-      return buildRemoteFailure(`Could not delete the user from Supabase: ${error.message}`);
-    }
-
-    return {
-      ok: true,
-      message: 'User deleted successfully.',
-      recordId: userId,
-    };
-  } catch (error) {
-    return buildRemoteFailure(
-      `Could not delete the user from Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
-    );
-  }
+  return mapSettingsRowToModel(data as SystemSettingsRow | null);
 }
 
 export async function saveSupabaseSettings(
