@@ -151,9 +151,9 @@ function LoginHeroDesktop() {
       component="section"
       sx={{
         background:
-          'radial-gradient(circle at 72% 24%, rgba(103, 207, 128, 0.32), transparent 22%), radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.15), transparent 18%), linear-gradient(145deg, #06110e 0%, #09251d 47%, #0d5735 100%)',
+          'radial-gradient(circle at 50% 8%, rgba(255, 255, 255, 0.18), transparent 16%), radial-gradient(circle at 76% 28%, rgba(103, 207, 128, 0.36), transparent 24%), radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.12), transparent 18%), linear-gradient(148deg, #04100c 0%, #071f18 44%, #0d5e39 100%)',
         color: 'common.white',
-        minHeight: { xs: 286, sm: 338 },
+        minHeight: { xs: 304, sm: 344 },
         overflow: 'hidden',
         p: { xs: 2.5, sm: 3.5 },
         position: 'relative',
@@ -197,13 +197,28 @@ function LoginHeroDesktop() {
           },
         }}
       />
+      <SportsSoccerOutlinedIcon
+        sx={{
+          bottom: { xs: 42, sm: 54 },
+          color: 'rgba(255,255,255,0.08)',
+          fontSize: { xs: 148, sm: 188 },
+          left: { xs: -34, sm: -26 },
+          position: 'absolute',
+          transform: 'rotate(-14deg)',
+          [desktopBreakpoint]: {
+            bottom: 120,
+            fontSize: 230,
+            left: 28,
+          },
+        }}
+      />
       <Box
         sx={{
-          border: '1px solid rgba(255,255,255,0.12)',
+          border: '1px solid rgba(255,255,255,0.16)',
           borderRadius: '50%',
           bottom: { xs: 10, sm: 24, md: 52 },
           height: { xs: 190, sm: 240, md: 320 },
-          opacity: 0.48,
+          opacity: 0.54,
           position: 'absolute',
           right: { xs: -78, sm: -42, md: -96 },
           width: { xs: 190, sm: 240, md: 320 },
@@ -216,7 +231,7 @@ function LoginHeroDesktop() {
           bottom: 0,
           height: { xs: 78, sm: 104, md: 164 },
           insetInline: 0,
-          opacity: 0.42,
+          opacity: 0.5,
           position: 'absolute',
           transform: 'perspective(420px) rotateX(58deg)',
           transformOrigin: 'bottom',
@@ -229,7 +244,7 @@ function LoginHeroDesktop() {
           backgroundSize: { xs: '22px 19px', sm: '26px 22px' },
           bottom: { xs: 22, md: 74 },
           height: { xs: 68, sm: 86 },
-          opacity: 0.18,
+          opacity: 0.22,
           position: 'absolute',
           right: { xs: 18, md: 72 },
           transform: 'rotate(-8deg)',
@@ -258,9 +273,10 @@ function LoginHeroDesktop() {
           <Box
             sx={{
               alignItems: 'center',
-              backgroundColor: 'rgba(255,255,255,0.14)',
-              border: '1px solid rgba(255,255,255,0.18)',
+              backgroundColor: 'rgba(255,255,255,0.16)',
+              border: '1px solid rgba(255,255,255,0.24)',
               borderRadius: 3,
+              boxShadow: '0 12px 30px rgba(0,0,0,0.16)',
               display: 'flex',
               height: { xs: 42, sm: 46 },
               justifyContent: 'center',
@@ -270,7 +286,7 @@ function LoginHeroDesktop() {
             <SportsSoccerOutlinedIcon sx={{ color: '#d8f6df', fontSize: { xs: 23, sm: 24 } }} />
           </Box>
           <Box>
-            <Typography sx={{ fontWeight: 850, letterSpacing: '-0.035em' }} variant="h6">
+            <Typography sx={{ fontWeight: 900, letterSpacing: '-0.04em' }} variant="h6">
               Sport Corner
             </Typography>
             <Typography sx={{ color: 'rgba(255,255,255,0.72)' }} variant="caption">
@@ -284,8 +300,9 @@ function LoginHeroDesktop() {
             sx={{
               fontSize: { xs: 33, sm: 44 },
               fontWeight: 900,
-              letterSpacing: { xs: '0.075em', sm: '0.08em' },
+              letterSpacing: { xs: '0.085em', sm: '0.08em' },
               lineHeight: 0.96,
+              textShadow: { xs: '0 12px 30px rgba(0,0,0,0.28)', md: 'none' },
               textTransform: 'uppercase',
               [desktopBreakpoint]: {
                 fontSize: 66,
@@ -304,11 +321,24 @@ function LoginHeroDesktop() {
               fontSize: { xs: 15, sm: 17, md: 20 },
               fontWeight: 700,
               letterSpacing: '-0.02em',
-              mt: 1.5,
+              mt: 1.35,
             }}
           >
             Football Boots & Gear
           </Typography>
+          <Box
+            sx={{
+              background:
+                'linear-gradient(90deg, transparent, rgba(215,246,223,0.76), transparent)',
+              height: 1,
+              mt: { xs: 1.75, sm: 2 },
+              mx: 'auto',
+              width: { xs: 154, sm: 190 },
+              [desktopBreakpoint]: {
+                display: 'none',
+              },
+            }}
+          />
         </Box>
 
         <Box
@@ -344,16 +374,16 @@ function LoginHeroDesktop() {
 
       <Box
         sx={{
-          background: 'linear-gradient(145deg, rgba(255,255,255,0.16), rgba(255,255,255,0.04))',
-          border: '1px solid rgba(255,255,255,0.18)',
+          background: 'linear-gradient(145deg, rgba(255,255,255,0.22), rgba(255,255,255,0.07))',
+          border: '1px solid rgba(255,255,255,0.24)',
           borderRadius: { xs: 3.25, sm: 4.5 },
           bottom: { xs: 16, sm: 23 },
-          boxShadow: '0 20px 42px rgba(0, 0, 0, 0.3)',
+          boxShadow: '0 22px 46px rgba(0, 0, 0, 0.34)',
           p: { xs: 1, md: 1.3 },
           position: 'absolute',
-          right: { xs: 16, sm: 34 },
+          right: { xs: 18, sm: 34 },
           transform: 'rotate(-7deg)',
-          width: { xs: 106, sm: 144 },
+          width: { xs: 118, sm: 148 },
           zIndex: 2,
           [tabletBreakpoint]: {
             bottom: 28,
@@ -472,10 +502,10 @@ function LoginFormCard({
         backgroundColor: 'common.white',
         borderTopLeftRadius: { xs: 28, sm: 32, md: 0 },
         borderTopRightRadius: { xs: 28, sm: 32, md: 0 },
-        boxShadow: { xs: '0 -16px 38px rgba(3, 19, 13, 0.14)', md: 'none' },
+        boxShadow: { xs: '0 -18px 44px rgba(3, 19, 13, 0.16)', md: 'none' },
         display: 'flex',
         flex: 1,
-        mt: { xs: -30, md: 0 },
+        mt: { xs: -32, md: 0 },
         p: { xs: 2.5, sm: 3.75 },
         position: 'relative',
         zIndex: 3,
@@ -523,7 +553,7 @@ function LoginFormCard({
           >
             Welcome back {'\u{1F44B}'}
           </Typography>
-          <Typography color="text.secondary" sx={{ mt: 0.75 }} variant="body2">
+          <Typography color="text.secondary" sx={{ mt: 0.85 }} variant="body2">
             Sign in to access your workspace
           </Typography>
         </Box>
@@ -645,14 +675,16 @@ function LoginFormCard({
               endIcon={<ArrowForwardOutlinedIcon />}
               size="large"
               sx={{
-                background: 'linear-gradient(135deg, #0d594a, #16804e)',
+                background: 'linear-gradient(135deg, #0a4f43 0%, #11824b 58%, #1a9a58 100%)',
                 borderRadius: 3.25,
-                boxShadow: '0 14px 24px rgba(13, 89, 74, 0.24)',
+                boxShadow:
+                  '0 16px 30px rgba(13, 89, 74, 0.32), inset 0 1px 0 rgba(255,255,255,0.18)',
                 minHeight: { xs: 56, sm: 54 },
                 mt: 0.5,
                 '&:hover': {
-                  background: 'linear-gradient(135deg, #083f36, #116d42)',
-                  boxShadow: '0 16px 28px rgba(13, 89, 74, 0.28)',
+                  background: 'linear-gradient(135deg, #083f36 0%, #0f7444 58%, #178b50 100%)',
+                  boxShadow:
+                    '0 18px 34px rgba(13, 89, 74, 0.36), inset 0 1px 0 rgba(255,255,255,0.18)',
                 },
               }}
               type="submit"
@@ -670,6 +702,7 @@ function LoginFormCard({
             alignItems: 'center',
             color: 'text.secondary',
             justifyContent: 'center',
+            pt: 0.1,
           }}
         >
           <ShieldOutlinedIcon sx={{ color: '#0d594a', fontSize: 18 }} />
@@ -695,19 +728,20 @@ function LoginFeatureCard() {
     <Box
       sx={{
         background:
-          'linear-gradient(135deg, rgba(220, 239, 233, 0.96), rgba(255, 255, 255, 0.92))',
-        border: '1px solid rgba(15, 91, 79, 0.14)',
+          'linear-gradient(135deg, rgba(215, 239, 227, 0.98), rgba(247, 252, 248, 0.96))',
+        border: '1px solid rgba(13, 89, 74, 0.2)',
         borderRadius: 3.5,
-        boxShadow: '0 12px 34px rgba(18, 44, 31, 0.08)',
-        p: { xs: 1.75, sm: 2 },
+        boxShadow: '0 14px 34px rgba(18, 44, 31, 0.1)',
+        p: { xs: 1.9, sm: 2 },
       }}
     >
-      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
+      <Stack direction="row" spacing={1.6} sx={{ alignItems: 'center' }}>
         <Box
           sx={{
             alignItems: 'center',
-            backgroundColor: '#0d594a',
+            background: 'linear-gradient(145deg, #0a4f43, #16804e)',
             borderRadius: 3,
+            boxShadow: '0 10px 20px rgba(13, 89, 74, 0.24)',
             color: 'common.white',
             display: 'flex',
             flexShrink: 0,
@@ -716,10 +750,13 @@ function LoginFeatureCard() {
             width: { xs: 40, sm: 42 },
           }}
         >
-          <StorefrontOutlinedIcon fontSize="small" />
+          <StorefrontOutlinedIcon sx={{ fontSize: 21 }} />
         </Box>
         <Box>
-          <Typography sx={{ fontWeight: 800, letterSpacing: '-0.03em' }} variant="body1">
+          <Typography
+            sx={{ color: 'text.primary', fontWeight: 850, letterSpacing: '-0.035em' }}
+            variant="body1"
+          >
             Built for speed. Made for your shop.
           </Typography>
           <Typography
@@ -736,18 +773,40 @@ function LoginFeatureCard() {
 }
 
 const fieldSx = {
+  '& .MuiInputLabel-root': {
+    color: '#65736b',
+    fontWeight: 650,
+    '&.Mui-focused': {
+      color: '#0a4f43',
+    },
+  },
   '& .MuiOutlinedInput-root': {
+    backgroundColor: '#fffefa',
     borderRadius: 3,
+    boxShadow: '0 8px 22px rgba(28, 48, 39, 0.05)',
     minHeight: { xs: 58, sm: 56 },
+    transition: 'box-shadow 160ms ease, background-color 160ms ease',
     '& fieldset': {
-      borderColor: '#dce5df',
+      borderColor: '#cfdcd4',
     },
     '&:hover fieldset': {
-      borderColor: '#9fb8aa',
+      borderColor: '#91aa9b',
     },
     '&.Mui-focused fieldset': {
-      borderColor: '#0f5b4f',
-      borderWidth: 1.5,
+      borderColor: '#0a4f43',
+      borderWidth: 2,
+    },
+    '&.Mui-focused': {
+      backgroundColor: '#ffffff',
+      boxShadow: '0 0 0 4px rgba(13, 89, 74, 0.1), 0 12px 28px rgba(28, 48, 39, 0.08)',
+    },
+    '& input': {
+      color: '#17231e',
+      fontWeight: 550,
+    },
+    '& input::placeholder': {
+      color: '#7a8980',
+      opacity: 1,
     },
   },
 };
