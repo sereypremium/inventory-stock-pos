@@ -39,12 +39,17 @@ interface ProductRow {
   id: string;
   created_at: string;
   updated_at: string;
-  name: string;
-  code: string;
+  name?: string;
+  code?: string;
+  product_name?: string;
+  style_code?: string;
+  model_name?: string;
+  product_code?: string;
   image_url: string | null;
   brand_id: string;
   category_id: string;
-  target_group: Product['targetGroup'];
+  target_group?: Product['targetGroup'];
+  gender?: Product['targetGroup'];
   base_price: number;
   description: string;
   status: Product['status'];
@@ -175,8 +180,8 @@ const PRODUCT_COLUMNS = [
   'id',
   'created_at',
   'updated_at',
-  'name',
-  'code',
+  'product_name',
+  'style_code',
   'brand_id',
   'category_id',
   'target_group',
@@ -185,6 +190,113 @@ const PRODUCT_COLUMNS = [
   'description',
   'status',
 ].join(',');
+
+type ProductSchemaKey =
+  | 'productNameStyleCode'
+  | 'productNameProductCode'
+  | 'modelNameProductCode'
+  | 'nameCode'
+  | 'nameProductCode';
+
+interface ProductSchemaDefinition {
+  key: ProductSchemaKey;
+  columns: string;
+  nameColumn: 'name' | 'product_name' | 'model_name';
+  codeColumn: 'code' | 'style_code' | 'product_code';
+  targetGroupColumn: 'target_group' | 'gender';
+}
+
+const PRODUCT_SCHEMA_CANDIDATES: ProductSchemaDefinition[] = [
+  {
+    key: 'productNameStyleCode',
+    columns: PRODUCT_COLUMNS,
+    nameColumn: 'product_name',
+    codeColumn: 'style_code',
+    targetGroupColumn: 'target_group',
+  },
+  {
+    key: 'productNameProductCode',
+    columns: [
+      'id',
+      'created_at',
+      'updated_at',
+      'product_name',
+      'product_code',
+      'brand_id',
+      'category_id',
+      'target_group',
+      'base_price',
+      'image_url',
+      'description',
+      'status',
+    ].join(','),
+    nameColumn: 'product_name',
+    codeColumn: 'product_code',
+    targetGroupColumn: 'target_group',
+  },
+  {
+    key: 'modelNameProductCode',
+    columns: [
+      'id',
+      'created_at',
+      'updated_at',
+      'model_name',
+      'product_code',
+      'brand_id',
+      'category_id',
+      'gender',
+      'base_price',
+      'image_url',
+      'description',
+      'status',
+    ].join(','),
+    nameColumn: 'model_name',
+    codeColumn: 'product_code',
+    targetGroupColumn: 'gender',
+  },
+  {
+    key: 'nameCode',
+    columns: [
+      'id',
+      'created_at',
+      'updated_at',
+      'name',
+      'code',
+      'brand_id',
+      'category_id',
+      'target_group',
+      'base_price',
+      'image_url',
+      'description',
+      'status',
+    ].join(','),
+    nameColumn: 'name',
+    codeColumn: 'code',
+    targetGroupColumn: 'target_group',
+  },
+  {
+    key: 'nameProductCode',
+    columns: [
+      'id',
+      'created_at',
+      'updated_at',
+      'name',
+      'product_code',
+      'brand_id',
+      'category_id',
+      'target_group',
+      'base_price',
+      'image_url',
+      'description',
+      'status',
+    ].join(','),
+    nameColumn: 'name',
+    codeColumn: 'product_code',
+    targetGroupColumn: 'target_group',
+  },
+];
+
+let activeProductSchema = PRODUCT_SCHEMA_CANDIDATES[0];
 
 const PRODUCT_VARIANT_COLUMNS = [
   'id',
@@ -257,6 +369,19 @@ function throwSupabaseReadError(label: string, error: SupabaseQueryError): never
   throw new SupabaseInventoryError(buildSupabaseReadErrorMessage(label, error), error.code);
 }
 
+function isSchemaMismatchError(error: SupabaseQueryError | null | undefined) {
+  const message = error?.message?.toLowerCase() ?? '';
+
+  return error?.code === '42703' || message.includes('does not exist');
+}
+
+function getProductSchemaAttemptOrder() {
+  return [
+    activeProductSchema,
+    ...PRODUCT_SCHEMA_CANDIDATES.filter((schema) => schema.key !== activeProductSchema.key),
+  ];
+}
+
 function coerceVariantSize(size: string) {
   const nextSize = Number(size);
 
@@ -265,6 +390,17 @@ function coerceVariantSize(size: string) {
   }
 
   return nextSize;
+}
+
+function getProductRowValue(
+  row: ProductRow,
+  key: ProductSchemaDefinition['nameColumn'] | ProductSchemaDefinition['codeColumn'],
+) {
+  return row[key] ?? '';
+}
+
+function getProductTargetGroup(row: ProductRow, schema: ProductSchemaDefinition) {
+  return row[schema.targetGroupColumn] ?? 'unisex';
 }
 
 function mapBrandRowToModel(row: BrandRow): Brand {
@@ -315,38 +451,38 @@ function mapCategoryToRow(category: Category): CategoryRow {
   };
 }
 
-function mapProductRowToModel(row: ProductRow): Product {
+function mapProductRowToModel(row: ProductRow, schema = activeProductSchema): Product {
   return {
     id: row.id,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    name: row.name,
-    styleCode: row.code,
+    name: getProductRowValue(row, schema.nameColumn),
+    styleCode: getProductRowValue(row, schema.codeColumn),
     imageUrl: row.image_url ?? '',
     brandId: row.brand_id,
     categoryId: row.category_id,
-    targetGroup: row.target_group,
+    targetGroup: getProductTargetGroup(row, schema),
     basePrice: Number(row.base_price) || 0,
     description: row.description ?? '',
     status: row.status,
   };
 }
 
-function mapProductToRow(product: Product): ProductRow {
+function mapProductToRow(product: Product, schema = activeProductSchema): ProductRow {
   return {
     id: product.id,
     created_at: product.createdAt,
     updated_at: product.updatedAt,
-    name: product.name,
-    code: product.styleCode,
+    [schema.nameColumn]: product.name,
+    [schema.codeColumn]: product.styleCode,
     image_url: product.imageUrl?.trim() || null,
     brand_id: product.brandId,
     category_id: product.categoryId,
-    target_group: product.targetGroup,
+    [schema.targetGroupColumn]: product.targetGroup,
     base_price: Number(product.basePrice) || 0,
     description: product.description ?? '',
     status: product.status,
-  };
+  } as ProductRow;
 }
 
 function mapVariantRowToModel(row: ProductVariantRow): ProductVariant {
@@ -591,6 +727,33 @@ async function rollbackInsertedPurchase(purchaseId: string) {
   await client.from('purchase_headers').delete().eq('id', purchaseId);
 }
 
+async function fetchProductRows() {
+  const client = getClient();
+  let lastError: SupabaseQueryError | null = null;
+
+  for (const schema of getProductSchemaAttemptOrder()) {
+    const result = await client
+      .from('products')
+      .select(schema.columns)
+      .order('created_at', { ascending: false });
+
+    if (!result.error) {
+      activeProductSchema = schema;
+      return ((result.data ?? []) as unknown as ProductRow[]).map((row) =>
+        mapProductRowToModel(row, schema),
+      );
+    }
+
+    lastError = result.error;
+
+    if (!isSchemaMismatchError(result.error)) {
+      break;
+    }
+  }
+
+  throwSupabaseReadError('Products', lastError ?? { message: 'Unknown product query error.' });
+}
+
 export async function fetchSupabaseInventorySlices(): Promise<
   Pick<
     InventoryState,
@@ -611,7 +774,7 @@ export async function fetchSupabaseInventorySlices(): Promise<
   ] = await Promise.all([
     client.from('brands').select('*').order('created_at', { ascending: false }),
     client.from('categories').select('*').order('created_at', { ascending: false }),
-    client.from('products').select(PRODUCT_COLUMNS).order('created_at', { ascending: false }),
+    fetchProductRows(),
     client.from('product_variants').select(PRODUCT_VARIANT_COLUMNS).order('sku', { ascending: true }),
     client.from('suppliers').select('*').order('created_at', { ascending: false }),
     client.from('purchase_headers').select('*').order('received_date', { ascending: false }),
@@ -626,10 +789,6 @@ export async function fetchSupabaseInventorySlices(): Promise<
 
   if (categoriesResult.error) {
     throwSupabaseReadError('Categories', categoriesResult.error);
-  }
-
-  if (productsResult.error) {
-    throwSupabaseReadError('Products', productsResult.error);
   }
 
   if (variantsResult.error) {
@@ -674,7 +833,7 @@ export async function fetchSupabaseInventorySlices(): Promise<
   return {
     brands: ((brandsResult.data ?? []) as BrandRow[]).map(mapBrandRowToModel),
     categories: ((categoriesResult.data ?? []) as CategoryRow[]).map(mapCategoryRowToModel),
-    products: ((productsResult.data ?? []) as unknown as ProductRow[]).map(mapProductRowToModel),
+    products: productsResult,
     variants: ((variantsResult.data ?? []) as unknown as ProductVariantRow[]).map(
       mapVariantRowToModel,
     ),
@@ -779,24 +938,39 @@ export async function deleteSupabaseCategory(categoryId: string): Promise<Operat
 export async function saveSupabaseProduct(product: Product): Promise<RemoteEntityResult<Product>> {
   try {
     const client = getClient();
-    const { data, error } = await client
-      .from('products')
-      .upsert(mapProductToRow(product))
-      .select(PRODUCT_COLUMNS)
-      .single();
+    let lastError: SupabaseQueryError | null = null;
 
-    if (error) {
-      return buildRemoteFailure(`Could not save the product to Supabase: ${error.message}`);
+    for (const schema of getProductSchemaAttemptOrder()) {
+      const { data, error } = await client
+        .from('products')
+        .upsert(mapProductToRow(product, schema))
+        .select(schema.columns)
+        .single();
+
+      if (!error) {
+        activeProductSchema = schema;
+        const savedProduct = data as unknown as ProductRow;
+
+        return {
+          ok: true,
+          message: 'Product saved successfully.',
+          recordId: savedProduct.id,
+          record: mapProductRowToModel(savedProduct, schema),
+        };
+      }
+
+      lastError = error;
+
+      if (!isSchemaMismatchError(error)) {
+        break;
+      }
     }
 
-    const savedProduct = data as unknown as ProductRow;
-
-    return {
-      ok: true,
-      message: 'Product saved successfully.',
-      recordId: savedProduct.id,
-      record: mapProductRowToModel(savedProduct),
-    };
+    return buildRemoteFailure(
+      `Could not save the product to Supabase: ${
+        buildSupabaseReadErrorMessage('Products', lastError ?? { message: 'Unknown product save error.' })
+      }`,
+    );
   } catch (error) {
     return buildRemoteFailure(
       `Could not save the product to Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
