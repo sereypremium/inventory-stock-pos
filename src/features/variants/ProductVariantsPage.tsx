@@ -414,13 +414,12 @@ function VariantDialog({
               }
               value={form.barcode ?? ''}
             />
-            <TextField
-              label="Image URL"
-              onChange={(event) =>
-                setForm((current) => ({ ...current, imageUrl: event.target.value }))
-              }
-              value={form.imageUrl ?? ''}
-            />
+            <Box sx={{ gridColumn: { md: '1 / -1' } }}>
+              <Typography color="text.secondary" variant="caption">
+                Variant cards use the parent product photo. Upload or replace the photo from the
+                Products page.
+              </Typography>
+            </Box>
             <TextField
               label="Size"
               onChange={(event) => setForm((current) => ({ ...current, size: event.target.value }))}

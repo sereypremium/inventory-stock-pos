@@ -175,7 +175,11 @@ function persistState(state: InventoryState) {
     return;
   }
 
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn('Could not persist inventory state to browser storage.', error);
+  }
 }
 
 function createTimestamps() {

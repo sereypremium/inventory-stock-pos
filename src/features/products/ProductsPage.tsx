@@ -6,6 +6,7 @@ import {
   Alert,
   Box,
   Button,
+  CircularProgress,
   Chip,
   Dialog,
   DialogActions,
@@ -34,6 +35,7 @@ import { StatusChip } from '../../components/common/StatusChip';
 import { TableEmptyState } from '../../components/common/TableEmptyState';
 import { useInventory } from '../../contexts/InventoryContext';
 import { formatCurrency, formatNumber } from '../../lib/formatters';
+import { createUploadedImageDataUrl } from '../../lib/imageUpload';
 import type { Product, ProductInput, TargetGroup } from '../../types/models';
 
 interface FeedbackState {
@@ -327,6 +329,8 @@ function ProductDialog({
 }) {
   const [form, setForm] = useState<ProductInput>(defaultProductForm);
   const [imageLoadError, setImageLoadError] = useState(false);
+  const [imageUploadError, setImageUploadError] = useState('');
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -353,11 +357,42 @@ function ProductDialog({
           },
     );
     setImageLoadError(false);
+    setImageUploadError('');
+    setIsUploadingImage(false);
   }, [brands, categories, initialValue, open]);
 
   useEffect(() => {
     setImageLoadError(false);
   }, [form.imageUrl]);
+
+  const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    setIsUploadingImage(true);
+    setImageUploadError('');
+
+    try {
+      const nextImageUrl = await createUploadedImageDataUrl(file);
+
+      setForm((current) => ({
+        ...current,
+        imageUrl: nextImageUrl,
+      }));
+      setImageLoadError(false);
+    } catch (error) {
+      setImageUploadError(
+        error instanceof Error ? error.message : 'The photo could not be uploaded.',
+      );
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   return (
     <Dialog fullWidth maxWidth="md" onClose={onClose} open={open}>
@@ -462,15 +497,52 @@ function ProductDialog({
                 <MenuItem value="active">Active</MenuItem>
                 <MenuItem value="inactive">Inactive</MenuItem>
               </TextField>
-            <TextField
-              label="Image URL"
-              onChange={(event) =>
-                setForm((current) => ({ ...current, imageUrl: event.target.value }))
-              }
-              placeholder="https://example.com/shoe-image.jpg"
-              sx={{ gridColumn: { md: '1 / -1' } }}
-              value={form.imageUrl ?? ''}
-            />
+            <Box sx={{ gridColumn: { md: '1 / -1' } }}>
+              <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                spacing={1.25}
+                sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+              >
+                <Box>
+                  <Typography sx={{ fontWeight: 700 }} variant="body2">
+                    Product Photo
+                  </Typography>
+                  <Typography color="text.secondary" sx={{ mt: 0.4 }} variant="caption">
+                    Upload a JPG, PNG, or WebP photo. The image is resized automatically before saving.
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={1}>
+                  <Button component="label" disabled={isUploadingImage} variant="outlined">
+                    {form.imageUrl ? 'Replace Photo' : 'Upload Photo'}
+                    <input accept="image/png,image/jpeg,image/webp" hidden onChange={handleImageUpload} type="file" />
+                  </Button>
+                  <Button
+                    color="inherit"
+                    disabled={!form.imageUrl || isUploadingImage}
+                    onClick={() => {
+                      setForm((current) => ({ ...current, imageUrl: '' }));
+                      setImageLoadError(false);
+                      setImageUploadError('');
+                    }}
+                    variant="text"
+                  >
+                    Remove
+                  </Button>
+                </Stack>
+              </Stack>
+              {(isUploadingImage || imageUploadError) && (
+                <Stack
+                  direction="row"
+                  spacing={1}
+                  sx={{ alignItems: 'center', mt: 1.25 }}
+                >
+                  {isUploadingImage && <CircularProgress size={16} thickness={5} />}
+                  <Typography color={imageUploadError ? 'error.main' : 'text.secondary'} variant="caption">
+                    {imageUploadError || 'Processing photo...'}
+                  </Typography>
+                </Stack>
+              )}
+            </Box>
             {form.imageUrl?.trim() && (
               <Box
                 sx={{
