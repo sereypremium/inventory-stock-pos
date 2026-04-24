@@ -91,13 +91,6 @@ export function DashboardPage() {
         </Alert>
       )}
 
-      {analytics.usingFallbackSales && (
-        <Alert severity="info">
-          No completed sales have been recorded yet, so the dashboard is showing demo sales
-          activity to keep the trend, operations, and business summary sections useful.
-        </Alert>
-      )}
-
       <DashboardKpiGrid analytics={analytics} />
 
       <Box

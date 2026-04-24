@@ -4,7 +4,6 @@ import type {
   PaymentMethod,
   Product,
   ProductVariant,
-  SaleItem,
   SaleRecord,
 } from '../../types/models';
 
@@ -68,7 +67,6 @@ export interface DashboardPaymentSummaryItem {
 }
 
 export interface DashboardAnalytics {
-  usingFallbackSales: boolean;
   todaySales: number;
   todayProfit: number;
   todayTransactions: number;
@@ -165,146 +163,6 @@ function getSaleCost(sale: SaleRecord) {
   );
 }
 
-function buildSaleItem(
-  variant: ProductVariant,
-  product: Product,
-  quantity: number,
-  index: number,
-): SaleItem {
-  const unitPrice = Number(variant.sellingPrice) || Number(product.basePrice) || 0;
-  const unitCost = Number(variant.costPrice) || 0;
-  const lineTotal = quantity * unitPrice;
-  const lineCost = quantity * unitCost;
-
-  return {
-    id: `fallback-sale-item-${index}-${variant.id}`,
-    productId: product.id,
-    variantId: variant.id,
-    productName: product.name,
-    variantSku: variant.sku,
-    size: variant.size,
-    color: variant.color,
-    quantity,
-    unitPrice,
-    unitCost,
-    lineCost,
-    lineTotal,
-    lineProfit: lineTotal - lineCost,
-  };
-}
-
-export function buildFallbackDashboardSales(
-  products: Product[],
-  variants: ProductVariant[],
-): SaleRecord[] {
-  const productMap = new Map(products.map((product) => [product.id, product]));
-  const activeVariants = variants.filter((variant) => {
-    const product = productMap.get(variant.productId);
-    return variant.status === 'active' && product?.status === 'active';
-  });
-
-  if (activeVariants.length === 0) {
-    return [];
-  }
-
-  const weightedVariants = activeVariants.flatMap((variant, index) =>
-    Array.from({ length: Math.max(activeVariants.length - index, 1) }, () => variant),
-  );
-  const cashierProfiles = [
-    { id: 'user-cashier', name: 'Front Counter' },
-    { id: 'user-admin', name: 'Store Admin' },
-    { id: 'user-lead', name: 'Floor Lead' },
-  ];
-  const paymentPattern: PaymentMethod[] = ['cash', 'cash', 'card', 'cash', 'transfer', 'card'];
-  const today = startOfDay(new Date());
-  const records: SaleRecord[] = [];
-
-  for (let dayOffset = 41; dayOffset >= 0; dayOffset -= 1) {
-    const currentDay = addDays(today, -dayOffset);
-    const dayOfWeek = currentDay.getDay();
-    const transactionCount =
-      1 + ((dayOffset + 2) % 3) + (dayOfWeek === 5 || dayOfWeek === 6 ? 1 : 0);
-
-    for (let transactionIndex = 0; transactionIndex < transactionCount; transactionIndex += 1) {
-      const primaryVariant =
-        weightedVariants[(dayOffset * 3 + transactionIndex) % weightedVariants.length];
-      const primaryProduct = productMap.get(primaryVariant.productId);
-
-      if (!primaryProduct) {
-        continue;
-      }
-
-      const saleItems = [
-        buildSaleItem(
-          primaryVariant,
-          primaryProduct,
-          1 + ((dayOffset + transactionIndex) % 2),
-          transactionIndex,
-        ),
-      ];
-      const secondaryVariant =
-        weightedVariants[(dayOffset * 5 + transactionIndex + 2) % weightedVariants.length];
-      const secondaryProduct = productMap.get(secondaryVariant.productId);
-
-      if (
-        secondaryProduct &&
-        secondaryVariant.id !== primaryVariant.id &&
-        (dayOffset + transactionIndex) % 2 === 0
-      ) {
-        saleItems.push(
-          buildSaleItem(secondaryVariant, secondaryProduct, 1, transactionIndex + 100),
-        );
-      }
-
-      const subtotal = saleItems.reduce((total, item) => total + item.lineTotal, 0);
-      const discountAmount =
-        (dayOffset + transactionIndex) % 4 === 0
-          ? Math.min(subtotal > 350 ? 20 : 10, subtotal)
-          : 0;
-      const totalAmount = Math.max(subtotal - discountAmount, 0);
-      const paymentMethod = paymentPattern[(dayOffset + transactionIndex) % paymentPattern.length];
-      const soldAt = new Date(currentDay);
-
-      soldAt.setHours(
-        10 + ((transactionIndex * 2 + dayOfWeek) % 9),
-        (dayOffset * 11 + transactionIndex * 7) % 60,
-        0,
-        0,
-      );
-
-      const paidAmount =
-        paymentMethod === 'cash'
-          ? totalAmount + ((dayOffset + transactionIndex) % 3 === 0 ? 1 : 0)
-          : totalAmount;
-      const cashier = cashierProfiles[(dayOffset + transactionIndex) % cashierProfiles.length];
-      const recordIndex = records.length + 1;
-
-      records.push({
-        id: `fallback-sale-${getDayKey(soldAt)}-${recordIndex}`,
-        receiptNo: `DEMO-${getDayKey(soldAt).replaceAll('-', '')}-${String(recordIndex).padStart(3, '0')}`,
-        soldAt: soldAt.toISOString(),
-        cashierId: cashier.id,
-        cashierName: cashier.name,
-        customerName: '',
-        paymentMethod,
-        discountAmount,
-        totalAmount,
-        paidAmount,
-        changeAmount: Math.max(paidAmount - totalAmount, 0),
-        note: '',
-        items: saleItems,
-        totalItems: saleItems.length,
-        totalQuantity: saleItems.reduce((total, item) => total + item.quantity, 0),
-        subtotal,
-        createdAt: soldAt.toISOString(),
-        updatedAt: soldAt.toISOString(),
-      });
-    }
-  }
-
-  return records.sort((left, right) => right.soldAt.localeCompare(left.soldAt));
-}
-
 interface BuildDashboardAnalyticsInput {
   brands: Brand[];
   products: Product[];
@@ -318,10 +176,7 @@ export function buildDashboardAnalytics({
   variants,
   sales,
 }: BuildDashboardAnalyticsInput): DashboardAnalytics {
-  const usingFallbackSales = sales.length === 0;
-  const effectiveSales = usingFallbackSales
-    ? buildFallbackDashboardSales(products, variants)
-    : sales;
+  const effectiveSales = sales;
   const productMap = new Map(products.map((product) => [product.id, product]));
   const brandMap = new Map(brands.map((brand) => [brand.id, brand]));
   const stockUnitsByProductId = new Map<string, number>();
@@ -725,7 +580,6 @@ export function buildDashboardAnalytics({
     .sort((left, right) => right.revenue - left.revenue);
 
   return {
-    usingFallbackSales,
     todaySales,
     todayProfit,
     todayTransactions,
