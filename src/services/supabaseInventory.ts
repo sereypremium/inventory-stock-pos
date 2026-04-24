@@ -359,6 +359,14 @@ function buildRemoteSuccess(message: string, recordId?: string): OperationResult
   };
 }
 
+function buildLegacyTransactionSchemaMessage(
+  label: string,
+  error: SupabaseQueryError,
+  repairScript: string,
+) {
+  return `${label} Your connected Supabase project still has legacy transaction columns or schema cache metadata that do not match the current app. Run \`${repairScript}\` in the Supabase SQL Editor, then refresh and try again. Original error: ${error.message ?? 'Unknown transaction schema error.'}`;
+}
+
 function buildSupabaseReadErrorMessage(label: string, error: SupabaseQueryError) {
   const details = [error.message, error.details, error.hint].filter(Boolean).join(' ');
   const code = error.code ? ` [${error.code}]` : '';
@@ -416,6 +424,18 @@ function omitFields<Row extends object>(row: Row, fields: string[]) {
   );
 
   return Object.fromEntries(entries);
+}
+
+function buildTransactionInsertFailureMessage(
+  label: string,
+  error: SupabaseQueryError,
+  repairScript: string,
+) {
+  if (isLegacyInsertCompatibilityError(error)) {
+    return buildLegacyTransactionSchemaMessage(label, error, repairScript);
+  }
+
+  return `${label} ${error.message ?? 'Unknown transaction save error.'}`;
 }
 
 function buildLegacyInsertFieldFallbacks(row: object) {
@@ -1241,7 +1261,11 @@ export async function createSupabasePurchaseTransaction(
 
     if (headerInsert.error) {
       return buildRemoteFailure(
-        `Could not save the purchase header to Supabase: ${headerInsert.error.message}`,
+        buildTransactionInsertFailureMessage(
+          'Could not save the purchase header to Supabase:',
+          headerInsert.error,
+          'supabase/transaction_schema_policy_repair.sql',
+        ),
       );
     }
 
@@ -1258,7 +1282,11 @@ export async function createSupabasePurchaseTransaction(
     if (itemsInsert.error) {
       await rollbackInsertedPurchase(String(insertedPurchaseId));
       return buildRemoteFailure(
-        `Could not save the purchase items to Supabase: ${itemsInsert.error.message}`,
+        buildTransactionInsertFailureMessage(
+          'Could not save the purchase items to Supabase:',
+          itemsInsert.error,
+          'supabase/transaction_schema_policy_repair.sql',
+        ),
       );
     }
 
@@ -1292,7 +1320,11 @@ export async function createSupabaseSaleTransaction(
 
     if (headerInsert.error) {
       return buildRemoteFailure(
-        `Could not save the sale header to Supabase: ${headerInsert.error.message}`,
+        buildTransactionInsertFailureMessage(
+          'Could not save the sale header to Supabase:',
+          headerInsert.error,
+          'supabase/sale_bigint_uuid_repair.sql',
+        ),
       );
     }
 
@@ -1305,7 +1337,11 @@ export async function createSupabaseSaleTransaction(
     if (itemsInsert.error) {
       await rollbackInsertedSale(String(insertedSaleId));
       return buildRemoteFailure(
-        `Could not save the sale items to Supabase: ${itemsInsert.error.message}`,
+        buildTransactionInsertFailureMessage(
+          'Could not save the sale items to Supabase:',
+          itemsInsert.error,
+          'supabase/transaction_schema_policy_repair.sql',
+        ),
       );
     }
 
