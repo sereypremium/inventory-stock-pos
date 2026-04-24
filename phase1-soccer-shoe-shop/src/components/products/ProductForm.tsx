@@ -1,7 +1,8 @@
-import { Box, MenuItem, TextField } from '@mui/material';
+import { Box, Button, CircularProgress, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { useEffect, useState } from 'react';
 import { FormActions } from '../common/FormActions';
 import type { Brand, Category, Gender, Product, ProductInput } from '../../types/models';
+import { create_uploaded_image_data_url } from '../../utils/imageUpload';
 
 interface ProductFormProps {
   brands: Brand[];
@@ -39,6 +40,9 @@ export function ProductForm({
   on_submit,
 }: ProductFormProps) {
   const [form, setForm] = useState<ProductInput>(default_product_form);
+  const [image_load_error, set_image_load_error] = useState(false);
+  const [image_upload_error, set_image_upload_error] = useState('');
+  const [is_uploading_image, set_is_uploading_image] = useState(false);
 
   useEffect(() => {
     if (initial_value) {
@@ -61,6 +65,36 @@ export function ProductForm({
       category_id: categories[0]?.id ?? '',
     });
   }, [brands, categories, initial_value]);
+
+  useEffect(() => {
+    set_image_load_error(false);
+  }, [form.image_url]);
+
+  const handle_image_upload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    set_is_uploading_image(true);
+    set_image_upload_error('');
+
+    try {
+      const next_image_url = await create_uploaded_image_data_url(file);
+
+      setForm((current) => ({ ...current, image_url: next_image_url }));
+      set_image_load_error(false);
+    } catch (error) {
+      set_image_upload_error(
+        error instanceof Error ? error.message : 'The photo could not be uploaded.',
+      );
+    } finally {
+      set_is_uploading_image(false);
+    }
+  };
 
   return (
     <Box
@@ -134,13 +168,56 @@ export function ProductForm({
           </MenuItem>
         ))}
       </TextField>
-      <TextField
-        label="Image URL"
-        onChange={(event) =>
-          setForm((current) => ({ ...current, image_url: event.target.value }))
-        }
-        value={form.image_url}
-      />
+      <Box sx={{ gridColumn: { md: '1 / -1' } }}>
+        <Stack
+          direction={{ xs: 'column', sm: 'row' }}
+          spacing={1.25}
+          sx={{ alignItems: { sm: 'center' }, justifyContent: 'space-between' }}
+        >
+          <Box>
+            <Typography sx={{ fontWeight: 700 }} variant="body2">
+              Product Photo
+            </Typography>
+            <Typography color="text.secondary" sx={{ mt: 0.4 }} variant="caption">
+              Upload a JPG, PNG, or WebP photo. The image is resized automatically before saving.
+            </Typography>
+          </Box>
+          <Stack direction="row" spacing={1}>
+            <Button component="label" disabled={is_uploading_image} variant="outlined">
+              {form.image_url ? 'Replace Photo' : 'Upload Photo'}
+              <input
+                accept="image/png,image/jpeg,image/webp"
+                hidden
+                onChange={handle_image_upload}
+                type="file"
+              />
+            </Button>
+            <Button
+              color="inherit"
+              disabled={!form.image_url || is_uploading_image}
+              onClick={() => {
+                setForm((current) => ({ ...current, image_url: '' }));
+                set_image_load_error(false);
+                set_image_upload_error('');
+              }}
+              variant="text"
+            >
+              Remove
+            </Button>
+          </Stack>
+        </Stack>
+        {(is_uploading_image || image_upload_error) && (
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'center', mt: 1.25 }}>
+            {is_uploading_image && <CircularProgress size={16} thickness={5} />}
+            <Typography
+              color={image_upload_error ? 'error.main' : 'text.secondary'}
+              variant="caption"
+            >
+              {image_upload_error || 'Processing photo...'}
+            </Typography>
+          </Stack>
+        )}
+      </Box>
       <TextField
         label="Status"
         onChange={(event) =>
@@ -157,6 +234,56 @@ export function ProductForm({
         <MenuItem value="inactive">Inactive</MenuItem>
       </TextField>
       <Box />
+      {form.image_url.trim() && (
+        <Box
+          sx={{
+            border: '1px dashed',
+            borderColor: image_load_error ? 'error.main' : 'divider',
+            borderRadius: 2,
+            gridColumn: { md: '1 / -1' },
+            p: 2.5,
+          }}
+        >
+          <Typography sx={{ fontWeight: 700, mb: 1.5, textAlign: 'center' }} variant="body2">
+            Image Preview
+          </Typography>
+          <Box
+            sx={{
+              alignItems: 'center',
+              backgroundColor: 'rgba(15, 91, 79, 0.04)',
+              border: '1px solid',
+              borderColor: 'divider',
+              borderRadius: 2,
+              display: 'flex',
+              height: 168,
+              justifyContent: 'center',
+              marginInline: 'auto',
+              maxWidth: 168,
+              overflow: 'hidden',
+              width: '100%',
+            }}
+          >
+            {image_load_error ? (
+              <Typography color="error.main" sx={{ px: 2, textAlign: 'center' }} variant="body2">
+                Unable to load image preview.
+              </Typography>
+            ) : (
+              <Box
+                alt={form.model_name || 'Product preview'}
+                component="img"
+                onError={() => set_image_load_error(true)}
+                src={form.image_url}
+                sx={{
+                  display: 'block',
+                  height: '100%',
+                  objectFit: 'cover',
+                  width: '100%',
+                }}
+              />
+            )}
+          </Box>
+        </Box>
+      )}
       <TextField
         label="Description"
         minRows={4}

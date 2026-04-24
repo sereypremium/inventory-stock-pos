@@ -58,5 +58,9 @@ export function load_catalog_state() {
 }
 
 export function save_catalog_state(state: InventoryState) {
-  localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(state));
+  try {
+    localStorage.setItem(CATALOG_STORAGE_KEY, JSON.stringify(state));
+  } catch (error) {
+    console.warn('Could not persist catalog state to browser storage.', error);
+  }
 }
