@@ -375,6 +375,47 @@ function isSchemaMismatchError(error: SupabaseQueryError | null | undefined) {
   return error?.code === '42703' || message.includes('does not exist');
 }
 
+function isMissingCreatedByInsertError(error: SupabaseQueryError | null | undefined) {
+  const combinedMessage = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    combinedMessage.includes('created_by') &&
+    (combinedMessage.includes('schema cache') ||
+      combinedMessage.includes('does not exist') ||
+      error?.code === '42703')
+  );
+}
+
+function withoutCreatedBy<Row extends object>(row: Row) {
+  const { created_by: _createdBy, ...nextRow } = row as Row & { created_by?: unknown };
+  return nextRow;
+}
+
+async function insertWithCreatedByFallback(
+  table: string,
+  payload: object | object[],
+  userId: string,
+) {
+  const client = getClient();
+  const payloadWithCreatedBy = Array.isArray(payload)
+    ? payload.map((row) => ({ ...row, created_by: userId }))
+    : { ...payload, created_by: userId };
+  const firstAttempt = await client.from(table).insert(payloadWithCreatedBy as never);
+
+  if (!firstAttempt.error || !isMissingCreatedByInsertError(firstAttempt.error)) {
+    return firstAttempt;
+  }
+
+  const fallbackPayload = Array.isArray(payloadWithCreatedBy)
+    ? payloadWithCreatedBy.map(withoutCreatedBy)
+    : withoutCreatedBy(payloadWithCreatedBy);
+
+  return client.from(table).insert(fallbackPayload as never);
+}
+
 function getProductSchemaAttemptOrder() {
   return [
     activeProductSchema,
@@ -1094,16 +1135,15 @@ export async function createSupabasePurchaseTransaction(
   try {
     const client = getClient();
     const userId = await getAuthenticatedUserId();
-    const purchaseHeaderRow = {
-      ...mapPurchaseHeaderToRow(stockIn),
-      created_by: userId,
-    };
-    const purchaseItemRows = stockIn.items.map((item) => ({
-      ...mapPurchaseItemToRow(item, stockIn.id, stockIn.createdAt),
-      created_by: userId,
-    }));
-
-    const headerInsert = await client.from('purchase_headers').insert(purchaseHeaderRow);
+    const purchaseHeaderRow = mapPurchaseHeaderToRow(stockIn);
+    const purchaseItemRows = stockIn.items.map((item) =>
+      mapPurchaseItemToRow(item, stockIn.id, stockIn.createdAt),
+    );
+    const headerInsert = await insertWithCreatedByFallback(
+      'purchase_headers',
+      purchaseHeaderRow,
+      userId,
+    );
 
     if (headerInsert.error) {
       return buildRemoteFailure(
@@ -1111,7 +1151,11 @@ export async function createSupabasePurchaseTransaction(
       );
     }
 
-    const itemsInsert = await client.from('purchase_items').insert(purchaseItemRows);
+    const itemsInsert = await insertWithCreatedByFallback(
+      'purchase_items',
+      purchaseItemRows,
+      userId,
+    );
 
     if (itemsInsert.error) {
       await rollbackInsertedPurchase(stockIn.id);
@@ -1145,16 +1189,11 @@ export async function createSupabaseSaleTransaction(
   try {
     const client = getClient();
     const userId = await getAuthenticatedUserId();
-    const saleHeaderRow = {
-      ...mapSaleHeaderToRow(sale),
-      created_by: userId,
-    };
-    const saleItemRows = sale.items.map((item) => ({
-      ...mapSaleItemToRow(item, sale.id, sale.createdAt),
-      created_by: userId,
-    }));
-
-    const headerInsert = await client.from('sale_headers').insert(saleHeaderRow);
+    const saleHeaderRow = mapSaleHeaderToRow(sale);
+    const saleItemRows = sale.items.map((item) =>
+      mapSaleItemToRow(item, sale.id, sale.createdAt),
+    );
+    const headerInsert = await insertWithCreatedByFallback('sale_headers', saleHeaderRow, userId);
 
     if (headerInsert.error) {
       return buildRemoteFailure(
@@ -1162,7 +1201,7 @@ export async function createSupabaseSaleTransaction(
       );
     }
 
-    const itemsInsert = await client.from('sale_items').insert(saleItemRows);
+    const itemsInsert = await insertWithCreatedByFallback('sale_items', saleItemRows, userId);
 
     if (itemsInsert.error) {
       await rollbackInsertedSale(sale.id);
