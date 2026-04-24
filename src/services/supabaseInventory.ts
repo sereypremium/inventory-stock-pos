@@ -166,6 +166,11 @@ interface SupabaseQueryError {
   message?: string;
 }
 
+interface InsertAttemptResult {
+  data?: unknown;
+  error: SupabaseQueryError | null;
+}
+
 export class SupabaseInventoryError extends Error {
   code?: string;
 
@@ -389,31 +394,123 @@ function isMissingCreatedByInsertError(error: SupabaseQueryError | null | undefi
   );
 }
 
-function withoutCreatedBy<Row extends object>(row: Row) {
-  const { created_by: _createdBy, ...nextRow } = row as Row & { created_by?: unknown };
-  return nextRow;
+function isLegacyInsertCompatibilityError(error: SupabaseQueryError | null | undefined) {
+  const combinedMessage = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    isMissingCreatedByInsertError(error) ||
+    combinedMessage.includes('schema cache') ||
+    combinedMessage.includes('column') && combinedMessage.includes('does not exist') ||
+    combinedMessage.includes('invalid input syntax for type bigint') ||
+    combinedMessage.includes('invalid input syntax for type integer') ||
+    combinedMessage.includes('invalid input syntax for type smallint')
+  );
 }
 
-async function insertWithCreatedByFallback(
-  table: string,
-  payload: object | object[],
-  userId: string,
-) {
-  const client = getClient();
-  const payloadWithCreatedBy = Array.isArray(payload)
-    ? payload.map((row) => ({ ...row, created_by: userId }))
-    : { ...payload, created_by: userId };
-  const firstAttempt = await client.from(table).insert(payloadWithCreatedBy as never);
+function omitFields<Row extends object>(row: Row, fields: string[]) {
+  const entries = Object.entries(row as Record<string, unknown>).filter(
+    ([field]) => !fields.includes(field),
+  );
 
-  if (!firstAttempt.error || !isMissingCreatedByInsertError(firstAttempt.error)) {
-    return firstAttempt;
+  return Object.fromEntries(entries);
+}
+
+function buildLegacyInsertFieldFallbacks(row: object) {
+  const fallbackFields = ['created_by', 'id', 'cashier_id'].filter((field) => field in row);
+  const fieldSets = new Set<string>(['']);
+
+  for (const field of fallbackFields) {
+    for (const currentSet of [...fieldSets]) {
+      const nextParts = currentSet ? currentSet.split('|') : [];
+      nextParts.push(field);
+      nextParts.sort();
+      fieldSets.add(nextParts.join('|'));
+    }
   }
 
-  const fallbackPayload = Array.isArray(payloadWithCreatedBy)
-    ? payloadWithCreatedBy.map(withoutCreatedBy)
-    : withoutCreatedBy(payloadWithCreatedBy);
+  return [...fieldSets].map((entry) => (entry ? entry.split('|') : []));
+}
 
-  return client.from(table).insert(fallbackPayload as never);
+async function insertSingleWithFallback(
+  table: string,
+  payload: object,
+  userId: string,
+): Promise<InsertAttemptResult> {
+  const client = getClient();
+  const payloadWithCreatedBy = { ...payload, created_by: userId };
+  let lastResult: InsertAttemptResult = {
+    error: { message: `Could not insert into ${table}.` },
+  };
+
+  for (const fieldsToOmit of buildLegacyInsertFieldFallbacks(payloadWithCreatedBy)) {
+    const candidatePayload = omitFields(payloadWithCreatedBy, fieldsToOmit);
+    const result = await client
+      .from(table)
+      .insert(candidatePayload as never)
+      .select('id')
+      .single() as unknown as InsertAttemptResult;
+
+    if (!result.error) {
+      return result;
+    }
+
+    lastResult = result;
+
+    if (!isLegacyInsertCompatibilityError(result.error)) {
+      return result;
+    }
+  }
+
+  return lastResult;
+}
+
+async function insertManyWithFallback(
+  table: string,
+  payload: object[],
+  userId: string,
+): Promise<InsertAttemptResult> {
+  const client = getClient();
+  const payloadWithCreatedBy = payload.map((row) => ({ ...row, created_by: userId }));
+  const fallbackMatrix = payloadWithCreatedBy[0]
+    ? buildLegacyInsertFieldFallbacks(payloadWithCreatedBy[0])
+    : [[]];
+  let lastResult: InsertAttemptResult = {
+    error: { message: `Could not insert rows into ${table}.` },
+  };
+
+  for (const fieldsToOmit of fallbackMatrix) {
+    const candidatePayload = payloadWithCreatedBy.map((row) => omitFields(row, fieldsToOmit));
+    const result = await client.from(table).insert(candidatePayload as never) as unknown as InsertAttemptResult;
+
+    if (!result.error) {
+      return result;
+    }
+
+    lastResult = result;
+
+    if (!isLegacyInsertCompatibilityError(result.error)) {
+      return result;
+    }
+  }
+
+  return lastResult;
+}
+
+function getInsertedRecordId(value: unknown) {
+  if (
+    value &&
+    typeof value === 'object' &&
+    'id' in value &&
+    (typeof (value as { id: unknown }).id === 'string' ||
+      typeof (value as { id: unknown }).id === 'number')
+  ) {
+    return (value as { id: string | number }).id;
+  }
+
+  return null;
 }
 
 function getProductSchemaAttemptOrder() {
@@ -1136,10 +1233,7 @@ export async function createSupabasePurchaseTransaction(
     const client = getClient();
     const userId = await getAuthenticatedUserId();
     const purchaseHeaderRow = mapPurchaseHeaderToRow(stockIn);
-    const purchaseItemRows = stockIn.items.map((item) =>
-      mapPurchaseItemToRow(item, stockIn.id, stockIn.createdAt),
-    );
-    const headerInsert = await insertWithCreatedByFallback(
+    const headerInsert = await insertSingleWithFallback(
       'purchase_headers',
       purchaseHeaderRow,
       userId,
@@ -1151,14 +1245,18 @@ export async function createSupabasePurchaseTransaction(
       );
     }
 
-    const itemsInsert = await insertWithCreatedByFallback(
+    const insertedPurchaseId = getInsertedRecordId(headerInsert.data) ?? stockIn.id;
+    const purchaseItemRows = stockIn.items.map((item) =>
+      mapPurchaseItemToRow(item, String(insertedPurchaseId), stockIn.createdAt),
+    );
+    const itemsInsert = await insertManyWithFallback(
       'purchase_items',
       purchaseItemRows,
       userId,
     );
 
     if (itemsInsert.error) {
-      await rollbackInsertedPurchase(stockIn.id);
+      await rollbackInsertedPurchase(String(insertedPurchaseId));
       return buildRemoteFailure(
         `Could not save the purchase items to Supabase: ${itemsInsert.error.message}`,
       );
@@ -1168,7 +1266,7 @@ export async function createSupabasePurchaseTransaction(
     const variantsUpdate = await client.from('product_variants').upsert(variantRows);
 
     if (variantsUpdate.error) {
-      await rollbackInsertedPurchase(stockIn.id);
+      await rollbackInsertedPurchase(String(insertedPurchaseId));
       return buildRemoteFailure(
         `Could not update stock in Supabase: ${variantsUpdate.error.message}`,
       );
@@ -1190,10 +1288,7 @@ export async function createSupabaseSaleTransaction(
     const client = getClient();
     const userId = await getAuthenticatedUserId();
     const saleHeaderRow = mapSaleHeaderToRow(sale);
-    const saleItemRows = sale.items.map((item) =>
-      mapSaleItemToRow(item, sale.id, sale.createdAt),
-    );
-    const headerInsert = await insertWithCreatedByFallback('sale_headers', saleHeaderRow, userId);
+    const headerInsert = await insertSingleWithFallback('sale_headers', saleHeaderRow, userId);
 
     if (headerInsert.error) {
       return buildRemoteFailure(
@@ -1201,10 +1296,14 @@ export async function createSupabaseSaleTransaction(
       );
     }
 
-    const itemsInsert = await insertWithCreatedByFallback('sale_items', saleItemRows, userId);
+    const insertedSaleId = getInsertedRecordId(headerInsert.data) ?? sale.id;
+    const saleItemRows = sale.items.map((item) =>
+      mapSaleItemToRow(item, String(insertedSaleId), sale.createdAt),
+    );
+    const itemsInsert = await insertManyWithFallback('sale_items', saleItemRows, userId);
 
     if (itemsInsert.error) {
-      await rollbackInsertedSale(sale.id);
+      await rollbackInsertedSale(String(insertedSaleId));
       return buildRemoteFailure(
         `Could not save the sale items to Supabase: ${itemsInsert.error.message}`,
       );
@@ -1214,7 +1313,7 @@ export async function createSupabaseSaleTransaction(
     const variantsUpdate = await client.from('product_variants').upsert(variantRows);
 
     if (variantsUpdate.error) {
-      await rollbackInsertedSale(sale.id);
+      await rollbackInsertedSale(String(insertedSaleId));
       return buildRemoteFailure(
         `Could not update sold stock in Supabase: ${variantsUpdate.error.message}`,
       );
