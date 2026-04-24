@@ -319,6 +319,9 @@ create policy "suppliers_admin_update" on public.suppliers for update to authent
 create policy "suppliers_admin_delete" on public.suppliers for delete to authenticated using (public.is_admin());
 
 drop policy if exists "purchase_headers_staff_select" on public.purchase_headers;
+drop policy if exists "purchase_headers_staff_insert" on public.purchase_headers;
+drop policy if exists "purchase_headers_staff_update" on public.purchase_headers;
+drop policy if exists "purchase_headers_staff_delete_own" on public.purchase_headers;
 drop policy if exists "purchase_headers_admin_insert" on public.purchase_headers;
 drop policy if exists "purchase_headers_admin_update" on public.purchase_headers;
 drop policy if exists "purchase_headers_admin_delete" on public.purchase_headers;
@@ -328,6 +331,9 @@ create policy "purchase_headers_admin_update" on public.purchase_headers for upd
 create policy "purchase_headers_admin_delete" on public.purchase_headers for delete to authenticated using (public.is_admin());
 
 drop policy if exists "purchase_items_staff_select" on public.purchase_items;
+drop policy if exists "purchase_items_staff_insert" on public.purchase_items;
+drop policy if exists "purchase_items_staff_update" on public.purchase_items;
+drop policy if exists "purchase_items_staff_delete_own" on public.purchase_items;
 drop policy if exists "purchase_items_admin_insert" on public.purchase_items;
 drop policy if exists "purchase_items_admin_update" on public.purchase_items;
 drop policy if exists "purchase_items_admin_delete" on public.purchase_items;
