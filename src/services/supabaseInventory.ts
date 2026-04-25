@@ -126,7 +126,6 @@ interface SaleHeaderRow {
   cashier_id?: string;
   cashier_name?: string;
   customer_name?: string | null;
-  customer_id?: string | null;
   payment_method: SaleRecord['paymentMethod'];
   discount_amount: number;
   total_amount: number;
@@ -916,7 +915,6 @@ function mapSaleHeaderToRow(sale: SaleRecord, saleNo: string): SaleHeaderRow {
     updated_at: sale.updatedAt,
     sale_no: saleNo,
     sale_date: sale.soldAt,
-    customer_id: null,
     payment_method: normalizePaymentMethod(sale.paymentMethod),
     discount_amount: Number(sale.discountAmount) || 0,
     total_amount: Number(sale.totalAmount) || 0,
