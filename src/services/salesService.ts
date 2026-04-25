@@ -19,8 +19,13 @@ function isPositiveInteger(value: number) {
 
 function createReceiptNo(state: InventoryState, soldAt: string) {
   const dayToken = soldAt.slice(0, 10).replaceAll('-', '');
-  const sameDayCount = state.sales.filter((sale) => sale.soldAt.startsWith(soldAt.slice(0, 10))).length;
-  const sequence = String(sameDayCount + 1).padStart(3, '0');
+  const sequencePrefix = `POS-${dayToken}-`;
+  const sameDaySequences = state.sales
+    .map((sale) => sale.receiptNo)
+    .filter((receiptNo) => receiptNo.startsWith(sequencePrefix))
+    .map((receiptNo) => Number(receiptNo.slice(sequencePrefix.length)))
+    .filter(Number.isInteger);
+  const sequence = String(Math.max(0, ...sameDaySequences) + 1).padStart(4, '0');
 
   return `POS-${dayToken}-${sequence}`;
 }

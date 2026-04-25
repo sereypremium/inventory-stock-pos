@@ -390,6 +390,13 @@ function buildSupabaseReadErrorMessage(label: string, error: SupabaseQueryError)
   return `${label} could not be loaded from Supabase${code}: ${details || 'Unknown query error.'}`;
 }
 
+function formatSupabaseMutationError(error: SupabaseQueryError) {
+  const code = error.code ? ` [${error.code}]` : '';
+  const details = [error.message, error.details, error.hint].filter(Boolean).join(' ');
+
+  return `${details || 'Unknown Supabase error.'}${code}`;
+}
+
 function throwSupabaseReadError(label: string, error: SupabaseQueryError): never {
   throw new SupabaseInventoryError(buildSupabaseReadErrorMessage(label, error), error.code);
 }
@@ -876,12 +883,70 @@ function mapSaleHeaderRowToModel(row: SaleHeaderRow, itemRows: SaleItemRow[]): S
   };
 }
 
-function mapSaleHeaderToRow(sale: SaleRecord): SaleHeaderRow {
+function getSaleNoPrefix(soldAt: string) {
+  return `POS-${soldAt.slice(0, 10).replaceAll('-', '')}-`;
+}
+
+function getSaleNoSequence(saleNo: string, prefix: string) {
+  if (!saleNo.startsWith(prefix)) {
+    return 0;
+  }
+
+  const sequence = Number(saleNo.slice(prefix.length));
+  return Number.isInteger(sequence) && sequence > 0 ? sequence : 0;
+}
+
+function formatSaleNo(prefix: string, sequence: number) {
+  return `${prefix}${String(sequence).padStart(4, '0')}`;
+}
+
+async function generateUniqueSaleNo(client: ReturnType<typeof getClient>, sale: SaleRecord) {
+  const prefix = getSaleNoPrefix(sale.soldAt);
+  const fallbackSequence = getSaleNoSequence(sale.receiptNo, prefix);
+
+  const { data, error } = await client
+    .from('sale_headers')
+    .select('sale_no')
+    .like('sale_no', `${prefix}%`);
+
+  if (error) {
+    return fallbackSequence > 0 ? sale.receiptNo : formatSaleNo(prefix, 1);
+  }
+
+  const remoteMaxSequence = ((data ?? []) as Array<{ sale_no?: string | null }>).reduce(
+    (maxSequence, row) => Math.max(maxSequence, getSaleNoSequence(row.sale_no ?? '', prefix)),
+    0,
+  );
+  const nextSequence =
+    fallbackSequence > remoteMaxSequence ? fallbackSequence : remoteMaxSequence + 1;
+
+  return formatSaleNo(prefix, nextSequence);
+}
+
+function mapSaleHeaderToRow(sale: SaleRecord, saleNo: string): SaleHeaderRow {
   return {
     id: sale.id,
     created_at: sale.createdAt,
     updated_at: sale.updatedAt,
-    receipt_no: sale.receiptNo,
+    sale_no: saleNo,
+    sale_date: sale.soldAt,
+    customer_id: null,
+    payment_method: normalizePaymentMethod(sale.paymentMethod),
+    discount_amount: Number(sale.discountAmount) || 0,
+    total_amount: Number(sale.totalAmount) || 0,
+    paid_amount: Number(sale.paidAmount) || 0,
+    change_amount: Number(sale.changeAmount) || 0,
+    notes: sale.note ?? '',
+    subtotal: Number(sale.subtotal) || 0,
+  };
+}
+
+function mapSaleHeaderToCurrentRow(sale: SaleRecord, saleNo: string): SaleHeaderRow {
+  return {
+    id: sale.id,
+    created_at: sale.createdAt,
+    updated_at: sale.updatedAt,
+    receipt_no: saleNo,
     sold_at: sale.soldAt,
     cashier_id: sale.cashierId,
     cashier_name: sale.cashierName,
@@ -895,24 +960,6 @@ function mapSaleHeaderToRow(sale: SaleRecord): SaleHeaderRow {
     total_items: Number(sale.totalItems) || sale.items.length,
     total_quantity: Number(sale.totalQuantity) || 0,
     subtotal: Number(sale.subtotal) || 0,
-  };
-}
-
-function mapSaleHeaderToLegacyRow(sale: SaleRecord) {
-  return {
-    id: sale.id,
-    created_at: sale.createdAt,
-    updated_at: sale.updatedAt,
-    sale_no: sale.receiptNo,
-    sale_date: sale.soldAt,
-    customer_id: null,
-    subtotal: Number(sale.subtotal) || 0,
-    discount_amount: Number(sale.discountAmount) || 0,
-    total_amount: Number(sale.totalAmount) || 0,
-    paid_amount: Number(sale.paidAmount) || 0,
-    change_amount: Number(sale.changeAmount) || 0,
-    payment_method: normalizePaymentMethod(sale.paymentMethod),
-    notes: sale.note ?? '',
   };
 }
 
@@ -1395,32 +1442,21 @@ export async function createSupabaseSaleTransaction(
   try {
     const client = getClient();
     const userId = await getAuthenticatedUserId();
-    const saleHeaderRow = mapSaleHeaderToRow(sale);
+    const saleNo = await generateUniqueSaleNo(client, sale);
+    const saleHeaderRow = mapSaleHeaderToRow(sale, saleNo);
     let headerInsert = await insertSingleWithFallback('sale_headers', saleHeaderRow, userId);
 
     if (headerInsert.error && isLegacySaleHeaderInsertError(headerInsert.error)) {
       headerInsert = await insertSingleWithFallback(
         'sale_headers',
-        { ...saleHeaderRow, sale_no: sale.receiptNo },
-        userId,
-      );
-    }
-
-    if (headerInsert.error && isLegacySaleHeaderInsertError(headerInsert.error)) {
-      headerInsert = await insertSingleWithFallback(
-        'sale_headers',
-        mapSaleHeaderToLegacyRow(sale),
+        mapSaleHeaderToCurrentRow(sale, saleNo),
         userId,
       );
     }
 
     if (headerInsert.error) {
       return buildRemoteFailure(
-        buildTransactionInsertFailureMessage(
-          'Could not save the sale header to Supabase:',
-          headerInsert.error,
-          'supabase/sale_bigint_uuid_repair.sql',
-        ),
+        `Could not save the sale header to Supabase: ${formatSupabaseMutationError(headerInsert.error)}`,
       );
     }
 
