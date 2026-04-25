@@ -1,3 +1,4 @@
+import DeleteSweepOutlinedIcon from '@mui/icons-material/DeleteSweepOutlined';
 import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
 import StorefrontOutlinedIcon from '@mui/icons-material/StorefrontOutlined';
 import SummarizeOutlinedIcon from '@mui/icons-material/SummarizeOutlined';
@@ -6,6 +7,9 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
+  FormControlLabel,
+  FormGroup,
   Stack,
   TextField,
   Typography,
@@ -16,6 +20,8 @@ import { DataCard } from '../../components/common/DataCard';
 import { PageHeader } from '../../components/common/PageHeader';
 import { StatCard } from '../../components/common/StatCard';
 import { useAuth } from '../../contexts/AuthContext';
+import { useInventory } from '../../contexts/InventoryContext';
+import type { ClearDatabaseTableKey } from '../../services/supabaseInventory';
 import type { SystemSettingsInput } from '../../types/models';
 
 interface FeedbackState {
@@ -23,10 +29,30 @@ interface FeedbackState {
   message: string;
 }
 
+const clearableTables: Array<{
+  key: ClearDatabaseTableKey;
+  label: string;
+  helper: string;
+}> = [
+  { key: 'sale_items', label: 'Sale items', helper: 'Line items inside sales' },
+  { key: 'sale_headers', label: 'Sale headers', helper: 'Receipts and sale totals' },
+  { key: 'purchase_items', label: 'Purchase items', helper: 'Line items inside stock in' },
+  { key: 'purchase_headers', label: 'Purchase headers', helper: 'Stock in transactions' },
+  { key: 'product_variants', label: 'Product variants', helper: 'Size, color, price, stock' },
+  { key: 'products', label: 'Products', helper: 'Product catalog records' },
+  { key: 'suppliers', label: 'Suppliers', helper: 'Supplier master data' },
+  { key: 'categories', label: 'Categories', helper: 'Product category records' },
+  { key: 'brands', label: 'Brands', helper: 'Product brand records' },
+];
+
 export function SettingsPage() {
   const { settings, saveSettings } = useAuth();
+  const { clearDatabaseTables, dataSource } = useInventory();
   const [form, setForm] = useState<SystemSettingsInput>(settings);
   const [feedback, setFeedback] = useState<FeedbackState | null>(null);
+  const [selectedTables, setSelectedTables] = useState<ClearDatabaseTableKey[]>([]);
+  const [clearConfirmed, setClearConfirmed] = useState(false);
+  const [isClearing, setIsClearing] = useState(false);
 
   useEffect(() => {
     setForm(settings);
@@ -39,6 +65,38 @@ export function SettingsPage() {
       severity: result.ok ? 'success' : 'error',
       message: result.message,
     });
+  };
+
+  const toggleClearTable = (tableKey: ClearDatabaseTableKey) => {
+    setSelectedTables((current) =>
+      current.includes(tableKey)
+        ? current.filter((selectedKey) => selectedKey !== tableKey)
+        : [...current, tableKey],
+    );
+  };
+
+  const handleClearTables = async () => {
+    if (!clearConfirmed || selectedTables.length === 0) {
+      setFeedback({
+        severity: 'warning',
+        message: 'Tick at least one table and confirm before clearing database data.',
+      });
+      return;
+    }
+
+    setIsClearing(true);
+    const result = await clearDatabaseTables(selectedTables);
+    setIsClearing(false);
+
+    setFeedback({
+      severity: result.ok ? 'success' : 'error',
+      message: result.message,
+    });
+
+    if (result.ok) {
+      setSelectedTables([]);
+      setClearConfirmed(false);
+    }
   };
 
   return (
@@ -177,6 +235,87 @@ export function SettingsPage() {
             </Button>
           </Box>
         </Box>
+      </DataCard>
+
+      <DataCard
+        description="Clear selected database tables only after ticking exactly what should be removed."
+        title="Database Maintenance"
+      >
+        <Stack spacing={2.5} sx={{ p: 3 }}>
+          <Alert severity="warning">
+            Clearing tables permanently removes those rows from the active {dataSource} data
+            source. Pick only the tables you want to empty.
+          </Alert>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 1,
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
+            }}
+          >
+            {clearableTables.map((table) => (
+              <Box
+                key={table.key}
+                sx={{
+                  border: '1px solid',
+                  borderColor: selectedTables.includes(table.key) ? 'error.main' : 'divider',
+                  borderRadius: 1,
+                  px: 1.25,
+                  py: 0.75,
+                }}
+              >
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={selectedTables.includes(table.key)}
+                      color="error"
+                      onChange={() => toggleClearTable(table.key)}
+                    />
+                  }
+                  label={
+                    <Box>
+                      <Typography sx={{ fontWeight: 700 }} variant="body2">
+                        {table.label}
+                      </Typography>
+                      <Typography color="text.secondary" variant="caption">
+                        {table.helper}
+                      </Typography>
+                    </Box>
+                  }
+                  sx={{ alignItems: 'flex-start', m: 0 }}
+                />
+              </Box>
+            ))}
+          </Box>
+
+          <FormGroup>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={clearConfirmed}
+                  color="error"
+                  onChange={(event) => setClearConfirmed(event.target.checked)}
+                />
+              }
+              label="I understand this will clear the selected database tables."
+            />
+          </FormGroup>
+
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <Button
+              color="error"
+              disabled={isClearing || selectedTables.length === 0 || !clearConfirmed}
+              onClick={() => {
+                void handleClearTables();
+              }}
+              startIcon={<DeleteSweepOutlinedIcon />}
+              variant="contained"
+            >
+              {isClearing ? 'Clearing...' : 'Clear Selected Tables'}
+            </Button>
+          </Box>
+        </Stack>
       </DataCard>
 
       <DataCard

@@ -7,6 +7,7 @@ import { validateSupplierInput } from '../services/inventoryValidation';
 import { createSaleTransaction } from '../services/salesService';
 import { createStockInTransaction } from '../services/stockInService';
 import {
+  clearSupabaseTables,
   createSupabasePurchaseTransaction,
   createSupabaseSaleTransaction,
   deleteSupabaseBrand,
@@ -22,6 +23,7 @@ import {
   saveSupabaseVariant,
   SupabaseInventoryError,
 } from '../services/supabaseInventory';
+import type { ClearDatabaseTableKey } from '../services/supabaseInventory';
 import type {
   Brand,
   BrandInput,
@@ -61,6 +63,7 @@ interface InventoryContextValue extends InventoryState {
   deleteSupplier: (supplierId: string) => Promise<OperationResult>;
   createStockIn: (input: StockInInput) => Promise<OperationResult>;
   createSale: (input: SaleInput) => Promise<OperationResult>;
+  clearDatabaseTables: (tableKeys: ClearDatabaseTableKey[]) => Promise<OperationResult>;
 }
 
 type InventorySyncErrorKind = 'permission' | 'query' | 'schema' | 'unknown';
@@ -240,6 +243,32 @@ function classifyInventorySyncError(error: unknown): InventorySyncError {
   }
 
   return { kind: 'unknown', message };
+}
+
+function clearSelectedStateTables(
+  current: InventoryState,
+  tableKeys: ClearDatabaseTableKey[],
+): InventoryState {
+  const selectedTables = new Set(tableKeys);
+
+  return {
+    ...current,
+    brands: selectedTables.has('brands') ? [] : current.brands,
+    categories: selectedTables.has('categories') ? [] : current.categories,
+    suppliers: selectedTables.has('suppliers') ? [] : current.suppliers,
+    products: selectedTables.has('products') ? [] : current.products,
+    variants: selectedTables.has('product_variants') ? [] : current.variants,
+    stockIns: selectedTables.has('purchase_headers')
+      ? []
+      : selectedTables.has('purchase_items')
+        ? current.stockIns.map((stockIn) => ({ ...stockIn, items: [] }))
+        : current.stockIns,
+    sales: selectedTables.has('sale_headers')
+      ? []
+      : selectedTables.has('sale_items')
+        ? current.sales.map((sale) => ({ ...sale, items: [] }))
+        : current.sales,
+  };
 }
 
 export function InventoryProvider({ children }: { children: ReactNode }) {
@@ -1046,6 +1075,25 @@ export function InventoryProvider({ children }: { children: ReactNode }) {
       commitState(() => result.nextState!);
 
       return buildSuccess(result.message, result.recordId);
+    },
+    clearDatabaseTables: async (tableKeys) => {
+      if (tableKeys.length === 0) {
+        return buildFailure('Select at least one table to clear.');
+      }
+
+      if (dataSource === 'supabase') {
+        const remoteResult = await clearSupabaseTables(tableKeys);
+
+        if (!remoteResult.ok) {
+          return buildFailure(remoteResult.message);
+        }
+      }
+
+      commitState((current) => clearSelectedStateTables(current, tableKeys));
+
+      return buildSuccess(
+        `Cleared ${tableKeys.length} selected table${tableKeys.length === 1 ? '' : 's'}.`,
+      );
     },
   };
 

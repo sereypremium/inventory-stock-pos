@@ -177,6 +177,29 @@ interface InsertAttemptResult {
   error: SupabaseQueryError | null;
 }
 
+export type ClearDatabaseTableKey =
+  | 'sale_items'
+  | 'sale_headers'
+  | 'purchase_items'
+  | 'purchase_headers'
+  | 'product_variants'
+  | 'products'
+  | 'suppliers'
+  | 'categories'
+  | 'brands';
+
+const CLEAR_DATABASE_TABLE_ORDER: ClearDatabaseTableKey[] = [
+  'sale_items',
+  'sale_headers',
+  'purchase_items',
+  'purchase_headers',
+  'product_variants',
+  'products',
+  'suppliers',
+  'categories',
+  'brands',
+];
+
 export class SupabaseInventoryError extends Error {
   code?: string;
 
@@ -369,6 +392,13 @@ function buildRemoteSuccess(message: string, recordId?: string): OperationResult
   };
 }
 
+function formatSupabaseMutationError(error: SupabaseQueryError) {
+  const code = error.code ? ` [${error.code}]` : '';
+  const details = [error.message, error.details, error.hint].filter(Boolean).join(' ');
+
+  return `${details || 'Unknown Supabase error.'}${code}`;
+}
+
 function buildLegacyTransactionSchemaMessage(
   label: string,
   error: SupabaseQueryError,
@@ -386,13 +416,6 @@ function buildSupabaseReadErrorMessage(label: string, error: SupabaseQueryError)
   }
 
   return `${label} could not be loaded from Supabase${code}: ${details || 'Unknown query error.'}`;
-}
-
-function formatSupabaseMutationError(error: SupabaseQueryError) {
-  const code = error.code ? ` [${error.code}]` : '';
-  const details = [error.message, error.details, error.hint].filter(Boolean).join(' ');
-
-  return `${details || 'Unknown Supabase error.'}${code}`;
 }
 
 function throwSupabaseReadError(label: string, error: SupabaseQueryError): never {
@@ -1330,6 +1353,38 @@ export async function deleteSupabaseSupplier(supplierId: string): Promise<Operat
   } catch (error) {
     return buildRemoteFailure(
       `Could not delete the supplier from Supabase: ${error instanceof Error ? error.message : 'Unknown error.'}`,
+    );
+  }
+}
+
+export async function clearSupabaseTables(
+  tableKeys: ClearDatabaseTableKey[],
+): Promise<OperationResult> {
+  try {
+    const client = getClient();
+    const selectedTables = new Set(tableKeys);
+    const orderedTables = CLEAR_DATABASE_TABLE_ORDER.filter((table) => selectedTables.has(table));
+
+    if (orderedTables.length === 0) {
+      return buildRemoteFailure('Select at least one table to clear.');
+    }
+
+    for (const table of orderedTables) {
+      const { error } = await client.from(table).delete().not('id', 'is', null);
+
+      if (error) {
+        return buildRemoteFailure(
+          `Could not clear ${table} in Supabase: ${formatSupabaseMutationError(error)}`,
+        );
+      }
+    }
+
+    return buildRemoteSuccess(
+      `Cleared ${orderedTables.length} selected database table${orderedTables.length === 1 ? '' : 's'}.`,
+    );
+  } catch (error) {
+    return buildRemoteFailure(
+      `Could not clear selected database tables: ${error instanceof Error ? error.message : 'Unknown error.'}`,
     );
   }
 }
