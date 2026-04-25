@@ -122,7 +122,6 @@ interface SaleHeaderRow {
   created_by?: string | null;
   receipt_no?: string;
   sale_no?: string;
-  sold_at?: string;
   sale_date?: string;
   cashier_id?: string;
   cashier_name?: string;
@@ -434,19 +433,6 @@ function isLegacyInsertCompatibilityError(error: SupabaseQueryError | null | und
     combinedMessage.includes('invalid input syntax for type bigint') ||
     combinedMessage.includes('invalid input syntax for type integer') ||
     combinedMessage.includes('invalid input syntax for type smallint')
-  );
-}
-
-function isLegacySaleHeaderInsertError(error: SupabaseQueryError | null | undefined) {
-  const combinedMessage = [error?.message, error?.details, error?.hint]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-
-  return (
-    isLegacyInsertCompatibilityError(error) ||
-    combinedMessage.includes('sale_no') ||
-    combinedMessage.includes('sale_date')
   );
 }
 
@@ -858,7 +844,7 @@ function mapSaleItemRowToModel(row: SaleItemRow): SaleItem {
 function mapSaleHeaderRowToModel(row: SaleHeaderRow, itemRows: SaleItemRow[]): SaleRecord {
   const items = itemRows.map(mapSaleItemRowToModel);
   const receiptNo = firstNonBlankString(row.receipt_no, row.sale_no, String(row.id));
-  const soldAt = firstNonBlankString(row.sold_at, row.sale_date, row.created_at);
+  const soldAt = firstNonBlankString(row.sale_date, row.created_at);
   const cashierId = firstNonBlankString(row.cashier_id, row.created_by);
 
   return {
@@ -937,28 +923,6 @@ function mapSaleHeaderToRow(sale: SaleRecord, saleNo: string): SaleHeaderRow {
     paid_amount: Number(sale.paidAmount) || 0,
     change_amount: Number(sale.changeAmount) || 0,
     notes: sale.note ?? '',
-    subtotal: Number(sale.subtotal) || 0,
-  };
-}
-
-function mapSaleHeaderToCurrentRow(sale: SaleRecord, saleNo: string): SaleHeaderRow {
-  return {
-    id: sale.id,
-    created_at: sale.createdAt,
-    updated_at: sale.updatedAt,
-    receipt_no: saleNo,
-    sold_at: sale.soldAt,
-    cashier_id: sale.cashierId,
-    cashier_name: sale.cashierName,
-    customer_name: sale.customerName?.trim() || null,
-    payment_method: normalizePaymentMethod(sale.paymentMethod),
-    discount_amount: Number(sale.discountAmount) || 0,
-    total_amount: Number(sale.totalAmount) || 0,
-    paid_amount: Number(sale.paidAmount) || 0,
-    change_amount: Number(sale.changeAmount) || 0,
-    note: sale.note ?? '',
-    total_items: Number(sale.totalItems) || sale.items.length,
-    total_quantity: Number(sale.totalQuantity) || 0,
     subtotal: Number(sale.subtotal) || 0,
   };
 }
@@ -1063,7 +1027,7 @@ export async function fetchSupabaseInventorySlices(): Promise<
     client.from('suppliers').select('*').order('created_at', { ascending: false }),
     client.from('purchase_headers').select('*').order('received_date', { ascending: false }),
     client.from('purchase_items').select('*').order('created_at', { ascending: true }),
-    client.from('sale_headers').select('*').order('sold_at', { ascending: false }),
+    client.from('sale_headers').select('*').order('sale_date', { ascending: false }),
     client.from('sale_items').select('*').order('created_at', { ascending: true }),
   ]);
 
@@ -1444,15 +1408,7 @@ export async function createSupabaseSaleTransaction(
     const userId = await getAuthenticatedUserId();
     const saleNo = await generateUniqueSaleNo(client, sale);
     const saleHeaderRow = mapSaleHeaderToRow(sale, saleNo);
-    let headerInsert = await insertSingleWithFallback('sale_headers', saleHeaderRow, userId);
-
-    if (headerInsert.error && isLegacySaleHeaderInsertError(headerInsert.error)) {
-      headerInsert = await insertSingleWithFallback(
-        'sale_headers',
-        mapSaleHeaderToCurrentRow(sale, saleNo),
-        userId,
-      );
-    }
+    const headerInsert = await insertSingleWithFallback('sale_headers', saleHeaderRow, userId);
 
     if (headerInsert.error) {
       return buildRemoteFailure(
