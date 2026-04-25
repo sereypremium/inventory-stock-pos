@@ -1,4 +1,5 @@
-import { Box, Typography } from '@mui/material';
+import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
+import { Box } from '@mui/material';
 import { useState } from 'react';
 
 interface ProductCardImageProps {
@@ -17,13 +18,13 @@ export function ProductCardImage({ imageUrl, alt }: ProductCardImageProps) {
         backgroundColor: showImage ? 'rgba(15, 91, 79, 0.04)' : 'rgba(15, 91, 79, 0.06)',
         border: '1px solid',
         borderColor: 'divider',
-        borderRadius: 2,
+        borderRadius: 1.5,
         display: 'flex',
         flexShrink: 0,
-        height: { xs: 72, sm: 76 },
+        height: { xs: 76, sm: 82 },
         justifyContent: 'center',
         overflow: 'hidden',
-        width: { xs: 72, sm: 76 },
+        width: { xs: 76, sm: 82 },
       }}
     >
       {showImage ? (
@@ -45,11 +46,7 @@ export function ProductCardImage({ imageUrl, alt }: ProductCardImageProps) {
           }}
         />
       ) : (
-        <Box sx={{ px: 1, textAlign: 'center' }}>
-          <Typography color="text.secondary" sx={{ fontSize: 10, fontWeight: 700 }} variant="caption">
-            No Image
-          </Typography>
-        </Box>
+        <Inventory2OutlinedIcon color="disabled" fontSize="small" />
       )}
     </Box>
   );
