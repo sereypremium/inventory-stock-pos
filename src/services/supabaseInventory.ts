@@ -120,19 +120,23 @@ interface SaleHeaderRow {
   created_at: string;
   updated_at: string;
   created_by?: string | null;
-  receipt_no: string;
-  sold_at: string;
-  cashier_id: string;
-  cashier_name: string;
-  customer_name: string | null;
+  receipt_no?: string;
+  sale_no?: string;
+  sold_at?: string;
+  sale_date?: string;
+  cashier_id?: string;
+  cashier_name?: string;
+  customer_name?: string | null;
+  customer_id?: string | null;
   payment_method: SaleRecord['paymentMethod'];
   discount_amount: number;
   total_amount: number;
   paid_amount: number;
   change_amount: number;
-  note: string;
-  total_items: number;
-  total_quantity: number;
+  note?: string;
+  notes?: string;
+  total_items?: number;
+  total_quantity?: number;
   subtotal: number;
 }
 
@@ -141,18 +145,22 @@ interface SaleItemRow {
   created_at: string;
   created_by?: string | null;
   sale_id: string;
-  product_id: string;
-  variant_id: string;
-  product_name: string;
-  variant_sku: string;
-  size: string;
-  color: string;
-  quantity: number;
-  unit_price: number;
-  unit_cost: number;
-  line_cost: number;
+  product_id?: string;
+  variant_id?: string;
+  product_variant_id?: string;
+  product_name?: string;
+  variant_sku?: string;
+  size?: string;
+  color?: string;
+  quantity?: number;
+  qty?: number;
+  unit_price?: number;
+  sale_price?: number;
+  unit_cost?: number;
+  cost_price?: number;
+  line_cost?: number;
   line_total: number;
-  line_profit: number;
+  line_profit?: number;
 }
 
 interface RemoteEntityResult<T> extends OperationResult {
@@ -325,6 +333,10 @@ function normalizePaymentMethod(value: string | null | undefined): SaleRecord['p
   return 'cash';
 }
 
+function firstNonBlankString(...values: Array<string | null | undefined>) {
+  return values.find((value) => typeof value === 'string' && value.trim().length > 0) ?? '';
+}
+
 function getClient() {
   if (!supabase) {
     throw new Error('Supabase is not configured.');
@@ -415,6 +427,32 @@ function isLegacyInsertCompatibilityError(error: SupabaseQueryError | null | und
     combinedMessage.includes('invalid input syntax for type bigint') ||
     combinedMessage.includes('invalid input syntax for type integer') ||
     combinedMessage.includes('invalid input syntax for type smallint')
+  );
+}
+
+function isLegacySaleHeaderInsertError(error: SupabaseQueryError | null | undefined) {
+  const combinedMessage = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    isLegacyInsertCompatibilityError(error) ||
+    combinedMessage.includes('sale_no') ||
+    combinedMessage.includes('sale_date')
+  );
+}
+
+function isLegacySaleItemInsertError(error: SupabaseQueryError | null | undefined) {
+  const combinedMessage = [error?.message, error?.details, error?.hint]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    isLegacyInsertCompatibilityError(error) ||
+    combinedMessage.includes('product_variant_id') ||
+    combinedMessage.includes('qty')
   );
 }
 
@@ -787,41 +825,50 @@ function mapPurchaseItemToRow(
 }
 
 function mapSaleItemRowToModel(row: SaleItemRow): SaleItem {
+  const quantity = Number(row.quantity ?? row.qty) || 0;
+  const unitPrice = Number(row.unit_price ?? row.sale_price) || 0;
+  const unitCost = Number(row.unit_cost ?? row.cost_price) || 0;
+  const lineCost = Number(row.line_cost) || quantity * unitCost;
+  const lineTotal = Number(row.line_total) || 0;
+
   return {
-    id: row.id,
-    productId: row.product_id,
-    variantId: row.variant_id,
-    productName: row.product_name,
-    variantSku: row.variant_sku,
-    size: row.size,
-    color: row.color,
-    quantity: Number(row.quantity) || 0,
-    unitPrice: Number(row.unit_price) || 0,
-    unitCost: Number(row.unit_cost) || 0,
-    lineCost: Number(row.line_cost) || 0,
-    lineTotal: Number(row.line_total) || 0,
-    lineProfit: Number(row.line_profit) || 0,
+    id: String(row.id),
+    productId: row.product_id ?? '',
+    variantId: row.variant_id ?? row.product_variant_id ?? '',
+    productName: row.product_name ?? 'Sale item',
+    variantSku: row.variant_sku ?? '',
+    size: row.size ?? '',
+    color: row.color ?? '',
+    quantity,
+    unitPrice,
+    unitCost,
+    lineCost,
+    lineTotal,
+    lineProfit: Number(row.line_profit) || lineTotal - lineCost,
   };
 }
 
 function mapSaleHeaderRowToModel(row: SaleHeaderRow, itemRows: SaleItemRow[]): SaleRecord {
   const items = itemRows.map(mapSaleItemRowToModel);
+  const receiptNo = firstNonBlankString(row.receipt_no, row.sale_no, String(row.id));
+  const soldAt = firstNonBlankString(row.sold_at, row.sale_date, row.created_at);
+  const cashierId = firstNonBlankString(row.cashier_id, row.created_by);
 
   return {
-    id: row.id,
+    id: String(row.id),
     createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    receiptNo: row.receipt_no,
-    soldAt: row.sold_at,
-    cashierId: row.cashier_id,
-    cashierName: row.cashier_name,
+    updatedAt: row.updated_at ?? row.created_at,
+    receiptNo,
+    soldAt,
+    cashierId,
+    cashierName: firstNonBlankString(row.cashier_name, cashierId),
     customerName: row.customer_name ?? '',
     paymentMethod: normalizePaymentMethod(row.payment_method),
     discountAmount: Number(row.discount_amount) || 0,
     totalAmount: Number(row.total_amount) || 0,
     paidAmount: Number(row.paid_amount) || 0,
     changeAmount: Number(row.change_amount) || 0,
-    note: row.note ?? '',
+    note: firstNonBlankString(row.note, row.notes),
     items,
     totalItems: Number(row.total_items) || items.length,
     totalQuantity: Number(row.total_quantity) || items.reduce((total, item) => total + item.quantity, 0),
@@ -851,6 +898,24 @@ function mapSaleHeaderToRow(sale: SaleRecord): SaleHeaderRow {
   };
 }
 
+function mapSaleHeaderToLegacyRow(sale: SaleRecord) {
+  return {
+    id: sale.id,
+    created_at: sale.createdAt,
+    updated_at: sale.updatedAt,
+    sale_no: sale.receiptNo,
+    sale_date: sale.soldAt,
+    customer_id: null,
+    subtotal: Number(sale.subtotal) || 0,
+    discount_amount: Number(sale.discountAmount) || 0,
+    total_amount: Number(sale.totalAmount) || 0,
+    paid_amount: Number(sale.paidAmount) || 0,
+    change_amount: Number(sale.changeAmount) || 0,
+    payment_method: normalizePaymentMethod(sale.paymentMethod),
+    notes: sale.note ?? '',
+  };
+}
+
 function mapSaleItemToRow(item: SaleItem, saleId: string, createdAt: string): SaleItemRow {
   return {
     id: item.id,
@@ -868,6 +933,20 @@ function mapSaleItemToRow(item: SaleItem, saleId: string, createdAt: string): Sa
     line_cost: Number(item.lineCost) || 0,
     line_total: Number(item.lineTotal) || 0,
     line_profit: Number(item.lineProfit) || 0,
+  };
+}
+
+function mapSaleItemToLegacyRow(item: SaleItem, saleId: string, createdAt: string) {
+  return {
+    id: item.id,
+    created_at: createdAt,
+    sale_id: saleId,
+    product_variant_id: item.variantId,
+    qty: Number(item.quantity) || 0,
+    cost_price: Number(item.unitCost) || 0,
+    sale_price: Number(item.unitPrice) || 0,
+    discount_amount: 0,
+    line_total: Number(item.lineTotal) || 0,
   };
 }
 
@@ -983,9 +1062,10 @@ export async function fetchSupabaseInventorySlices(): Promise<
   }
 
   for (const row of (saleItemsResult.data ?? []) as SaleItemRow[]) {
-    const currentRows = salesItemsBySaleId.get(row.sale_id) ?? [];
+    const saleId = String(row.sale_id);
+    const currentRows = salesItemsBySaleId.get(saleId) ?? [];
     currentRows.push(row);
-    salesItemsBySaleId.set(row.sale_id, currentRows);
+    salesItemsBySaleId.set(saleId, currentRows);
   }
 
   return {
@@ -1000,7 +1080,7 @@ export async function fetchSupabaseInventorySlices(): Promise<
       mapPurchaseHeaderRowToModel(row, purchaseItemsByPurchaseId.get(row.id) ?? []),
     ),
     sales: ((saleHeadersResult.data ?? []) as SaleHeaderRow[]).map((row) =>
-      mapSaleHeaderRowToModel(row, salesItemsBySaleId.get(row.id) ?? []),
+      mapSaleHeaderRowToModel(row, salesItemsBySaleId.get(String(row.id)) ?? []),
     ),
   };
 }
@@ -1316,7 +1396,23 @@ export async function createSupabaseSaleTransaction(
     const client = getClient();
     const userId = await getAuthenticatedUserId();
     const saleHeaderRow = mapSaleHeaderToRow(sale);
-    const headerInsert = await insertSingleWithFallback('sale_headers', saleHeaderRow, userId);
+    let headerInsert = await insertSingleWithFallback('sale_headers', saleHeaderRow, userId);
+
+    if (headerInsert.error && isLegacySaleHeaderInsertError(headerInsert.error)) {
+      headerInsert = await insertSingleWithFallback(
+        'sale_headers',
+        { ...saleHeaderRow, sale_no: sale.receiptNo },
+        userId,
+      );
+    }
+
+    if (headerInsert.error && isLegacySaleHeaderInsertError(headerInsert.error)) {
+      headerInsert = await insertSingleWithFallback(
+        'sale_headers',
+        mapSaleHeaderToLegacyRow(sale),
+        userId,
+      );
+    }
 
     if (headerInsert.error) {
       return buildRemoteFailure(
@@ -1332,7 +1428,14 @@ export async function createSupabaseSaleTransaction(
     const saleItemRows = sale.items.map((item) =>
       mapSaleItemToRow(item, String(insertedSaleId), sale.createdAt),
     );
-    const itemsInsert = await insertManyWithFallback('sale_items', saleItemRows, userId);
+    let itemsInsert = await insertManyWithFallback('sale_items', saleItemRows, userId);
+
+    if (itemsInsert.error && isLegacySaleItemInsertError(itemsInsert.error)) {
+      const legacySaleItemRows = sale.items.map((item) =>
+        mapSaleItemToLegacyRow(item, String(insertedSaleId), sale.createdAt),
+      );
+      itemsInsert = await insertManyWithFallback('sale_items', legacySaleItemRows, userId);
+    }
 
     if (itemsInsert.error) {
       await rollbackInsertedSale(String(insertedSaleId));
